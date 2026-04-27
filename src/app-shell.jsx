@@ -9,7 +9,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "fontScale": 1.0,
   "demoOffline": false,
   "showSavedToast": true,
-  "apiMode": "local",
+  "apiMode": "supabase",
   "apiUrl": ""
 }/*EDITMODE-END*/;
 
