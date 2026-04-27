@@ -1,7 +1,7 @@
 {
-  "name": "CA Bonus Tracker",
-  "short_name": "CABT",
-  "description": "GroundStandard internal — CA scorecard, Sales commissions, Admin approvals.",
+  "name": "gsTeam Scoreboard",
+  "short_name": "gsTeam",
+  "description": "GroundStandard internal team scoreboard — gamified scorecard, commissions, approvals.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
