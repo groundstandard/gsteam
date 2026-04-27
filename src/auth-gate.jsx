@@ -1,36 +1,43 @@
 // auth-gate.jsx — Magic-link email login screen for Supabase mode.
 
 function AuthGate({ theme, onAuthed }) {
-  const [phase, setPhase]   = React.useState('checking');
-  const [email, setEmail]   = React.useState('');
-  const [error, setError]   = React.useState(null);
-  const [busy, setBusy]     = React.useState(false);
+  const [phase, setPhase] = React.useState('checking');
+  const [email, setEmail] = React.useState('');
+  const [error, setError] = React.useState(null);
+  const [busy, setBusy]   = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
+    // Timeout fallback so a hung Supabase call never strands the user
+    // on "Verifying session…".
+    const timeoutId = setTimeout(() => {
+      if (!cancelled) setPhase('needs-login');
+    }, 4000);
     (async () => {
       try {
         const session = await CABT_currentSession();
         if (cancelled) return;
+        clearTimeout(timeoutId);
         if (!session) { setPhase('needs-login'); return; }
         const prof = await CABT_currentProfile();
         if (cancelled) return;
         onAuthed && onAuthed(session, prof);
       } catch (e) {
-        if (!cancelled) { setError(e.message); setPhase('error'); }
+        if (!cancelled) { clearTimeout(timeoutId); setError(e.message); setPhase('error'); }
       }
     })();
     let unsub = null;
     CABT_sb().then(sb => {
       const { data } = sb.auth.onAuthStateChange(async (_evt, session) => {
         if (session && !cancelled) {
+          clearTimeout(timeoutId);
           const prof = await CABT_currentProfile();
           onAuthed && onAuthed(session, prof);
         }
       });
       unsub = data?.subscription;
-    });
-    return () => { cancelled = true; if (unsub) unsub.unsubscribe(); };
+    }).catch(() => {});
+    return () => { cancelled = true; clearTimeout(timeoutId); if (unsub) unsub.unsubscribe(); };
   }, []);
 
   const onSubmit = async (e) => {
@@ -82,8 +89,8 @@ function AuthGate({ theme, onAuthed }) {
               fontSize: 14, color: theme.ink, lineHeight: 1.55,
               fontFamily: theme.serif, marginBottom: 18,
             }}>
-              Check <strong>{email}</strong> for a sign-in link.<br/>
-              Click the link from the same browser to come back here signed in.
+              If <strong>{email}</strong> is invited, a sign-in link is on the way.<br/>
+              Click it from this device to come back here signed in.
             </div>
             <button onClick={() => setPhase('needs-login')} style={{
               fontSize: 13, color: theme.inkMuted, background: 'transparent',
@@ -96,7 +103,7 @@ function AuthGate({ theme, onAuthed }) {
               fontSize: 13, color: theme.inkSoft, lineHeight: 1.55,
               fontFamily: theme.serif, fontStyle: 'italic', marginBottom: 24,
             }}>
-              Invite-only. Enter the email Bobby invited — we'll send you a sign-in link.
+              Invite-only. Enter your email — if you're invited, we'll send you a sign-in link.
             </div>
 
             <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -135,7 +142,7 @@ function AuthGate({ theme, onAuthed }) {
             )}
 
             <div style={{ marginTop: 36, fontSize: 11, color: theme.inkMuted, lineHeight: 1.6 }}>
-              Not invited yet? Ping Bobby — he can add your email in Admin → Roster.
+              Not invited? Ping Bobby — he can add your email in Admin → Roster.
             </div>
           </>
         )}
