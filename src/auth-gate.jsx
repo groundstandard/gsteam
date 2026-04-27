@@ -69,7 +69,7 @@ function AuthGate({ theme, onAuthed }) {
         <div style={{
           fontFamily: theme.serif, fontSize: 32, fontWeight: 600, letterSpacing: -0.5,
           lineHeight: 1.1, marginBottom: 10,
-        }}>CA Bonus Tracker</div>
+        }}>gsTeam Scoreboard</div>
         <div style={{
           fontSize: 13, color: theme.inkSoft, lineHeight: 1.55,
           fontFamily: theme.serif, fontStyle: 'italic', marginBottom: 28,
