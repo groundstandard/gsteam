@@ -200,6 +200,23 @@ const CABT_api = {
     if (error) throw error;
     return toUI(data);
   },
+  // F1.1.3 — paginated audit_log fetch with optional filters.
+  async fetchAuditLog({ actorId, tableName, action, fromDate, toDate, limit = 50, offset = 0 } = {}) {
+    if (CABT_getApiMode() !== 'supabase') return { rows: [], hasMore: false };
+    const sb = await CABT_sb();
+    let q = sb.from('audit_log').select('*').order('at', { ascending: false });
+    if (actorId)   q = q.eq('actor_id', actorId);
+    if (tableName) q = q.eq('table_name', tableName);
+    if (action)    q = q.eq('action', action);
+    if (fromDate)  q = q.gte('at', new Date(fromDate).toISOString());
+    if (toDate)    q = q.lt('at',  new Date(new Date(toDate).getTime() + 86400000).toISOString());
+    q = q.range(offset, offset + limit); // fetch one extra to detect hasMore
+    const { data, error } = await q;
+    if (error) throw error;
+    const rows = data || [];
+    const hasMore = rows.length > limit;
+    return { rows: toUI(hasMore ? rows.slice(0, limit) : rows), hasMore };
+  },
   subscribe(table, callback) {
     if (CABT_getApiMode() !== 'supabase') return { unsubscribe: () => {} };
     let chan = null;

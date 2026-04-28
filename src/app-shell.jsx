@@ -206,6 +206,7 @@ function App() {
       case 'add-client':       return <AdminAddClient state={state} theme={theme} navigate={navigate} onSubmit={submitClient} presetFromStripe={route.params.presetFromStripe}/>;
       case 'pending-clients':  return <AdminPendingClients state={state} theme={theme} navigate={navigate}/>;
       case 'questions':   return <AdminOpenQuestions state={state} theme={theme}/>;
+      case 'audit-log':   return <AdminAuditLog state={state} theme={theme}/>;
       case 'config':      return <AdminConfig state={state} theme={theme} onUpdate={updateConfig}/>;
       case 'roster':      return <AdminRoster state={state} theme={theme} onReload={reloadLive} onToast={showToast}/>;
       case 'more':        return <AdminMore theme={theme} navigate={navigate}/>;

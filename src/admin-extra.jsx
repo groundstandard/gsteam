@@ -1007,12 +1007,190 @@ function AdminPendingClients({ state, theme, navigate }) {
   );
 }
 
+// ── Audit Log (F1.1.3) ─────────────────────────────────────────────────────
+// Read-only chronological browser of audit_log rows. Filter chips for actor,
+// table, action, and date range. Tap a row to expand the diff JSON.
+const AUDIT_PAGE = 50;
+const AUDIT_ACTIONS = ['insert', 'update', 'delete', 'approve', 'reject'];
+
+function actionTone(a) {
+  if (a === 'insert' || a === 'approve') return 'green';
+  if (a === 'update') return 'blue';
+  if (a === 'delete' || a === 'reject') return 'red';
+  return 'gray';
+}
+
+function AdminAuditLog({ state, theme }) {
+  const [rows, setRows] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [hasMore, setHasMore] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  const [expanded, setExpanded] = React.useState(null); // row id
+  const [filters, setFilters] = React.useState({ actorId: '', tableName: '', action: '', fromDate: '', toDate: '' });
+
+  // Build actor + table option lists from data we already loaded for the app.
+  const actors = React.useMemo(() => {
+    const m = new Map();
+    (state.cas || []).forEach(c => { if (c.userId) m.set(c.userId, c.name); });
+    (state.sales || []).forEach(s => { if (s.userId) m.set(s.userId, s.name); });
+    return [...m.entries()].map(([id, name]) => ({ id, name }));
+  }, [state]);
+
+  const tables = ['profiles', 'cas', 'sales_team', 'clients', 'monthly_metrics',
+    'growth_events', 'surveys', 'adjustments', 'edit_requests', 'config'];
+
+  const load = React.useCallback(async (reset = true) => {
+    const offset = reset ? 0 : rows.length;
+    if (reset) { setLoading(true); setRows([]); setExpanded(null); }
+    else setLoadingMore(true);
+    setError(null);
+    try {
+      const res = await CABT_api.fetchAuditLog({ ...filters, limit: AUDIT_PAGE, offset });
+      setRows(reset ? res.rows : [...rows, ...res.rows]);
+      setHasMore(res.hasMore);
+    } catch (e) {
+      setError(e.message || 'load_failed');
+    } finally {
+      setLoading(false); setLoadingMore(false);
+    }
+  }, [filters, rows]);
+
+  React.useEffect(() => { load(true); /* eslint-disable-next-line */ }, [filters]);
+
+  const updateFilter = (k, v) => setFilters(f => ({ ...f, [k]: v }));
+  const clearFilters = () => setFilters({ actorId: '', tableName: '', action: '', fromDate: '', toDate: '' });
+  const anyFilter = Object.values(filters).some(Boolean);
+
+  const inputStyle = {
+    fontSize: 12, padding: '6px 8px', borderRadius: 8,
+    border: `1px solid ${theme.rule}`, background: theme.surface,
+    color: theme.ink, fontFamily: 'inherit',
+  };
+
+  return (
+    <div style={{ padding: '8px 16px 100px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Header */}
+      <Card theme={theme} padding={14}>
+        <div style={{ fontSize: 11, color: theme.inkMuted, letterSpacing: 0.6, textTransform: 'uppercase', fontWeight: 700 }}>Audit Log</div>
+        <div style={{ fontSize: 13, color: theme.inkSoft, marginTop: 4 }}>
+          Read-only history of changes. {rows.length} {rows.length === 1 ? 'entry' : 'entries'}{hasMore ? '+' : ''} loaded.
+        </div>
+      </Card>
+
+      {/* Filter chips */}
+      <Card theme={theme} padding={12}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <select style={inputStyle} value={filters.actorId} onChange={(e) => updateFilter('actorId', e.target.value)}>
+            <option value="">All actors</option>
+            {actors.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <select style={inputStyle} value={filters.tableName} onChange={(e) => updateFilter('tableName', e.target.value)}>
+            <option value="">All tables</option>
+            {tables.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select style={inputStyle} value={filters.action} onChange={(e) => updateFilter('action', e.target.value)}>
+            <option value="">All actions</option>
+            {AUDIT_ACTIONS.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <input type="date" style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={filters.fromDate} onChange={(e) => updateFilter('fromDate', e.target.value)} placeholder="From"/>
+            <input type="date" style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={filters.toDate}   onChange={(e) => updateFilter('toDate',   e.target.value)} placeholder="To"/>
+          </div>
+        </div>
+        {anyFilter && (
+          <button onClick={clearFilters} style={{
+            marginTop: 8, fontSize: 11, fontWeight: 600, color: theme.accent,
+            background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit',
+          }}>Clear filters</button>
+        )}
+      </Card>
+
+      {/* Body */}
+      {loading && <Card theme={theme} padding={20}><div style={{ fontSize: 13, color: theme.inkMuted, textAlign: 'center' }}>Loading…</div></Card>}
+
+      {!loading && error && (
+        <Card theme={theme} padding={20}>
+          <div style={{ fontSize: 13, color: '#C62828' }}>Failed to load audit log: {error}</div>
+        </Card>
+      )}
+
+      {!loading && !error && rows.length === 0 && (
+        <Card theme={theme} padding={20}>
+          <div style={{ fontSize: 13, color: theme.inkMuted, textAlign: 'center' }}>
+            {anyFilter ? 'No entries match these filters.' : 'No audit entries yet.'}
+          </div>
+        </Card>
+      )}
+
+      {!loading && rows.length > 0 && (
+        <Card theme={theme} padding={0}>
+          {rows.map((r, i) => {
+            const isOpen = expanded === r.id;
+            const ts = r.at ? new Date(r.at) : null;
+            const tsStr = ts ? ts.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+            const actorName = (actors.find(a => a.id === r.actorId) || {}).name || r.actorEmail || 'unknown';
+            return (
+              <div key={r.id} style={{ borderBottom: i === rows.length - 1 ? 'none' : `1px solid ${theme.rule}` }}>
+                <button
+                  onClick={() => setExpanded(isOpen ? null : r.id)}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'left',
+                    background: 'transparent', border: 'none', padding: '12px 14px',
+                    fontFamily: 'inherit', cursor: 'pointer',
+                  }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                    <Pill tone={actionTone(r.action)} theme={theme}>{r.action || '—'}</Pill>
+                    <span style={{ fontSize: 12, color: theme.ink, fontWeight: 600 }}>{r.tableName}</span>
+                    {r.rowId && <span style={{ fontSize: 11, color: theme.inkMuted, fontFamily: theme.mono }}>#{r.rowId}</span>}
+                    <span style={{ fontSize: 11, color: theme.inkMuted, marginLeft: 'auto' }}>{tsStr}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: theme.inkSoft }}>{actorName}</div>
+                </button>
+                {isOpen && (
+                  <div style={{
+                    padding: '4px 14px 14px',
+                    fontSize: 11, fontFamily: theme.mono || 'ui-monospace, monospace',
+                    color: theme.ink,
+                  }}>
+                    <pre style={{
+                      background: theme.rule, padding: 10, borderRadius: 8,
+                      overflow: 'auto', maxHeight: 280, margin: 0,
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    }}>{r.diff ? JSON.stringify(r.diff, null, 2) : '(no diff captured)'}</pre>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </Card>
+      )}
+
+      {/* Load more */}
+      {!loading && hasMore && (
+        <button
+          onClick={() => load(false)}
+          disabled={loadingMore}
+          style={{
+            padding: '12px', fontSize: 13, fontWeight: 600,
+            color: theme.accent, background: 'transparent',
+            border: `1px solid ${theme.rule}`, borderRadius: 12,
+            cursor: loadingMore ? 'wait' : 'pointer', fontFamily: 'inherit',
+          }}>
+          {loadingMore ? 'Loading…' : `Load ${AUDIT_PAGE} more`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function AdminMore({ theme, navigate }) {
   const items = [
     { name: 'edits',     icon: 'edit',  label: 'Edit Requests',   desc: 'Approve protected-field edits past grace' },
     { name: 'reviews',   icon: 'star',  label: 'Reviews Inbox',   desc: 'Match incoming reviews to clients' },
     { name: 'pending-clients', icon: 'cash', label: 'Pending Clients', desc: 'Approve new Stripe customers' },
     { name: 'questions', icon: 'alert', label: 'Open Questions',  desc: 'Decisions pending leadership' },
+    { name: 'audit-log', icon: 'shield', label: 'Audit Log',       desc: 'Read-only history of changes' },
     { name: 'config',    icon: 'cog',   label: 'Config',          desc: 'Scoring thresholds & quarter window' },
     { name: 'roster',    icon: 'user',  label: 'Roster',          desc: 'CAs, Account Managers, Relationship Dev Reps' },
   ];
@@ -1047,6 +1225,6 @@ function AdminMore({ theme, navigate }) {
 }
 
 Object.assign(window, {
-  AdminAnnualBonus, AdminRevenueLedger, AdminClientRollup, AdminClientCalc, AdminOpenQuestions, AdminMore,
+  AdminAnnualBonus, AdminRevenueLedger, AdminClientRollup, AdminClientCalc, AdminOpenQuestions, AdminAuditLog, AdminMore,
   AdminAddClient, AdminPendingClients, CABT_nextClientId: nextClientId,
 });
