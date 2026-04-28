@@ -249,8 +249,10 @@ function InviteTeammateModal({ theme, state, onClose, onSuccess }) {
     return null; // owner/admin/integrator have no roster id
   }, [formRole, state]);
 
+  // Owner is intentionally not in this list — there's only one Owner (Bobby)
+  // and it's never created via the Invite flow. Admin is selectable for FIs
+  // who should have full-privilege access.
   const ROLE_OPTIONS = [
-    { value: 'owner',      label: 'Owner' },
     { value: 'admin',      label: 'Admin' },
     { value: 'integrator', label: 'Fractional Integrator' },
     { value: 'ca',         label: 'Client Associate' },
