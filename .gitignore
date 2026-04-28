@@ -7,6 +7,11 @@ _FOR_SLACK/
 # Stray nested mirror of src/ — orphan, not used by index.html.
 src/src/
 
+# Local-only working docs (status tracker, scratch notes)
+PHASES.md
+NOTES.md
+TODO.md
+
 # npm artifacts (this project has no package.json — Babel-in-browser)
 node_modules/
 package-lock.json
