@@ -320,6 +320,36 @@ async function CABT_inviteUser({ email, displayName, role, password, caId, sales
   return json;
 }
 
+// F1.1.2 — calls the admin-edit-user Edge Function.
+// action='update_profile' or 'reset_password'. Caller must be owner/admin.
+async function CABT_editUser({ action, userId, ...rest }) {
+  const sb = await CABT_sb();
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session?.access_token) throw new Error('not_signed_in');
+  // Convert camelCase fields to snake_case for the EF.
+  const body = { action, user_id: userId };
+  for (const [k, v] of Object.entries(rest)) {
+    if (v === undefined) continue;
+    body[camelToSnake(k)] = v;
+  }
+  const res = await fetch(`${CABT_SUPABASE_URL}/functions/v1/admin-edit-user`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': CABT_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.ok) {
+    const err = new Error(json.error || ('edit_failed_' + res.status));
+    err.detail = json.detail; err.status = res.status;
+    throw err;
+  }
+  return json;
+}
+
 Object.assign(window, {
   CABT_api, CABT_getApiMode, CABT_setApiMode, CABT_getApiUrl, CABT_setApiUrl,
   CABT_signInWithGoogle, CABT_signInWithEmail, CABT_signInWithPassword,
@@ -327,5 +357,5 @@ Object.assign(window, {
   CABT_signOut, CABT_currentSession, CABT_currentProfile,
   CABT_sb, CABT_SUPABASE_URL, CABT_SUPABASE_ANON_KEY,
   CABT_ROLE_LABELS, CABT_ROLE_SHORT, CABT_SALES_ROLE_LABELS, CABT_SALES_ROLE_SHORT,
-  CABT_roleLabel, CABT_roleShort, CABT_inviteUser,
+  CABT_roleLabel, CABT_roleShort, CABT_inviteUser, CABT_editUser,
 });
