@@ -443,7 +443,7 @@ function App() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: useFrame
+      backgroundColor: useFrame
         ? (t.theme === 'athletic' ? '#06080C' : t.theme === 'fintech' ? '#EEF1F5' : '#E8E2D5')
         : theme.bg,
       backgroundImage: useFrame

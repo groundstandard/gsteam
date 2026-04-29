@@ -79,30 +79,42 @@ async function CABT_signOut() {
 
 // Race a promise against a timeout so a hung Supabase call can never wedge sign-in.
 // 2026-04-29: Bobby reported "stuck on Verifying session" on reload while logged in.
-// Inner timeout ensures auth-gate's outer fallback isn't the only safety net.
-function _withTimeout(promise, ms, label) {
+// Returns the FALLBACK on timeout instead of throwing — throwing was bubbling up
+// through Supabase's onAuthStateChange listeners and surfacing in the console.
+function _withTimeout(promise, ms, label, fallback = null) {
+  let timer;
+  const timeoutPromise = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      console.warn('[CABT] timeout_' + label + ' after ' + ms + 'ms — using fallback');
+      resolve({ __timedOut: true, data: fallback });
+    }, ms);
+  });
   return Promise.race([
-    promise,
-    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout_' + label)), ms)),
+    promise.then((v) => { clearTimeout(timer); return v; }),
+    timeoutPromise,
   ]);
 }
 
 async function CABT_currentSession() {
-  const sb = await _withTimeout(CABT_sb(), 1500, 'sb_init');
-  const { data: { session } } = await _withTimeout(sb.auth.getSession(), 1500, 'getSession');
-  return session;
+  const sb = await CABT_sb();
+  const result = await _withTimeout(sb.auth.getSession(), 2500, 'getSession', null);
+  if (result && result.__timedOut) return null;
+  return result?.data?.session || null;
 }
 
 async function CABT_currentProfile() {
-  const sb = await _withTimeout(CABT_sb(), 1500, 'sb_init');
-  const { data: { user } } = await _withTimeout(sb.auth.getUser(), 1500, 'getUser');
+  const sb = await CABT_sb();
+  const result = await _withTimeout(sb.auth.getUser(), 2500, 'getUser', null);
+  if (result && result.__timedOut) return null;
+  const user = result?.data?.user;
   if (!user) return null;
-  const { data, error } = await _withTimeout(
+  const profileResult = await _withTimeout(
     sb.from('profiles').select('*').eq('id', user.id).maybeSingle(),
-    2000, 'profile_query'
+    3000, 'profile_query', null
   );
-  if (error) throw error;
-  return data;
+  if (profileResult && profileResult.__timedOut) return null;
+  if (profileResult?.error) throw profileResult.error;
+  return profileResult?.data || null;
 }
 
 const snakeToCamel = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
