@@ -7,7 +7,7 @@
 //
 // 1777255980 is replaced at build time by scripts/build-pwa.mjs.
 
-const VERSION = '1777493800';
+const VERSION = '1777494171';
 const CACHE   = `cabt-${VERSION}`;
 
 // Files known at install time. Other same-origin requests are cached on first hit.

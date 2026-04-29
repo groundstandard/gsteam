@@ -349,14 +349,20 @@ function InviteTeammateModal({ theme, state, onClose, onSuccess }) {
     }
   };
 
+  // On desktop (vw>=1024) the modal centers and becomes a card; on mobile
+  // it slides up as a bottom sheet. Both follow the same content layout.
+  const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
   return (
     <div
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0, background: 'rgba(8, 12, 24, 0.55)',
-        zIndex: 1000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        zIndex: 1000, display: 'flex',
+        alignItems: isDesktop ? 'center' : 'flex-end',
+        justifyContent: 'center',
         backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
         animation: 'scrimIn 0.18s ease',
+        padding: isDesktop ? '32px' : 0,
       }}
     >
       <div
@@ -365,25 +371,36 @@ function InviteTeammateModal({ theme, state, onClose, onSuccess }) {
         aria-modal="true"
         aria-labelledby="invite-modal-title"
         style={{
-          background: theme.bg, width: '100%', maxWidth: 520,
-          maxHeight: 'calc(92vh - env(safe-area-inset-bottom, 0px))',
+          background: theme.bg, width: '100%',
+          maxWidth: isDesktop ? 680 : 520,
+          maxHeight: isDesktop ? 'calc(92vh - 64px)' : 'calc(92vh - env(safe-area-inset-bottom, 0px))',
           borderTopLeftRadius: 24, borderTopRightRadius: 24,
-          padding: '14px 18px calc(env(safe-area-inset-bottom, 0px) + 24px)',
+          borderBottomLeftRadius: isDesktop ? 24 : 0,
+          borderBottomRightRadius: isDesktop ? 24 : 0,
+          padding: isDesktop
+            ? '20px 24px 24px'
+            : '14px 18px calc(env(safe-area-inset-bottom, 0px) + 24px)',
           overflowY: 'auto',
-          boxShadow: '0 -12px 40px rgba(0,0,0,0.32), 0 -2px 8px rgba(0,0,0,0.12)',
-          animation: 'sheetIn 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+          boxShadow: isDesktop
+            ? '0 24px 60px rgba(0,0,0,0.32), 0 4px 12px rgba(0,0,0,0.14)'
+            : '0 -12px 40px rgba(0,0,0,0.32), 0 -2px 8px rgba(0,0,0,0.12)',
+          animation: isDesktop
+            ? 'modalIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)'
+            : 'sheetIn 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
       >
-        {/* Drag-handle indicator (iOS sheet style) */}
-        <div style={{
-          width: 40, height: 4, borderRadius: 2,
-          background: theme.rule,
-          margin: '0 auto 14px',
-        }}/>
+        {/* Drag-handle indicator (iOS sheet style) — mobile only */}
+        {!isDesktop && (
+          <div style={{
+            width: 40, height: 4, borderRadius: 2,
+            background: theme.rule,
+            margin: '0 auto 14px',
+          }}/>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
           <div id="invite-modal-title" style={{
             fontFamily: theme.serif || 'inherit',
-            fontSize: 22, fontWeight: 600, color: theme.ink, letterSpacing: -0.3,
+            fontSize: isDesktop ? 26 : 22, fontWeight: 600, color: theme.ink, letterSpacing: -0.3,
           }}>Invite teammate</div>
           <button
             onClick={onClose}
@@ -580,14 +597,18 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
     }
   };
 
+  const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
   return (
     <div
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0, background: 'rgba(8, 12, 24, 0.55)',
-        zIndex: 1000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        zIndex: 1000, display: 'flex',
+        alignItems: isDesktop ? 'center' : 'flex-end',
+        justifyContent: 'center',
         backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
         animation: 'scrimIn 0.18s ease',
+        padding: isDesktop ? '32px' : 0,
       }}
     >
       <div
@@ -596,24 +617,35 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
         aria-modal="true"
         aria-labelledby="emp-modal-title"
         style={{
-          background: theme.bg, width: '100%', maxWidth: 520,
-          maxHeight: 'calc(92vh - env(safe-area-inset-bottom, 0px))',
+          background: theme.bg, width: '100%',
+          maxWidth: isDesktop ? 680 : 520,
+          maxHeight: isDesktop ? 'calc(92vh - 64px)' : 'calc(92vh - env(safe-area-inset-bottom, 0px))',
           borderTopLeftRadius: 24, borderTopRightRadius: 24,
-          padding: '14px 18px calc(env(safe-area-inset-bottom, 0px) + 24px)',
+          borderBottomLeftRadius: isDesktop ? 24 : 0,
+          borderBottomRightRadius: isDesktop ? 24 : 0,
+          padding: isDesktop
+            ? '20px 24px 24px'
+            : '14px 18px calc(env(safe-area-inset-bottom, 0px) + 24px)',
           overflowY: 'auto',
-          boxShadow: '0 -12px 40px rgba(0,0,0,0.32), 0 -2px 8px rgba(0,0,0,0.12)',
-          animation: 'sheetIn 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+          boxShadow: isDesktop
+            ? '0 24px 60px rgba(0,0,0,0.32), 0 4px 12px rgba(0,0,0,0.14)'
+            : '0 -12px 40px rgba(0,0,0,0.32), 0 -2px 8px rgba(0,0,0,0.12)',
+          animation: isDesktop
+            ? 'modalIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)'
+            : 'sheetIn 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
       >
-        <div style={{
-          width: 40, height: 4, borderRadius: 2,
-          background: theme.rule,
-          margin: '0 auto 14px',
-        }}/>
+        {!isDesktop && (
+          <div style={{
+            width: 40, height: 4, borderRadius: 2,
+            background: theme.rule,
+            margin: '0 auto 14px',
+          }}/>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <div id="emp-modal-title" style={{
             fontFamily: theme.serif || 'inherit',
-            fontSize: 22, fontWeight: 600, color: theme.ink, letterSpacing: -0.3,
+            fontSize: isDesktop ? 26 : 22, fontWeight: 600, color: theme.ink, letterSpacing: -0.3,
           }}>
             {mode === 'reset' ? 'Reset password' : 'Edit teammate'}
           </div>

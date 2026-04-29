@@ -442,27 +442,98 @@ function App() {
         </div>
       )}
 
-      {/* Content — extra bottom padding so last items aren't hidden behind floating nav.
-         Adds env(safe-area-inset-bottom) so the home indicator on iOS PWA standalone
-         doesn't overlap the last item. */}
-      <div style={{
-        flex: 1, overflowY: 'auto', overflowX: 'hidden', position: 'relative',
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 96px)',
-      }}>
-        <div style={{ maxWidth: !isPhone && role === 'Admin' && vw >= 1100 ? 1024 : '100%', margin: '0 auto' }}>
-          {renderContent()}
+      {/* Desktop admin uses a sidebar nav instead of a floating bottom bar.
+         Mobile + non-admin users still get the floating island tab bar below. */}
+      {(!isPhone && role === 'Admin' && vw >= 1100) ? (
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          {/* Left sidebar nav — desktop admin only */}
+          <nav style={{
+            flexShrink: 0, width: 220,
+            background: theme.bgElev,
+            borderRight: `1px solid ${theme.rule}`,
+            padding: '20px 14px',
+            display: 'flex', flexDirection: 'column', gap: 4,
+            overflowY: 'auto',
+          }}>
+            <div style={{
+              fontSize: 10, fontWeight: 700, color: theme.inkMuted,
+              letterSpacing: 1, textTransform: 'uppercase',
+              padding: '0 12px 8px',
+            }}>Admin</div>
+            {tabs.map(tb => {
+              const active = route.name === tb.name;
+              return (
+                <button
+                  key={tb.name}
+                  onClick={() => { setHistory([]); setRoute({ name: tb.name, params: {} }); }}
+                  className="cabt-btn-press"
+                  aria-current={active ? 'page' : undefined}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    width: '100%', padding: '11px 12px',
+                    background: active ? theme.accent + '15' : 'transparent',
+                    border: 'none', borderRadius: 10,
+                    color: active ? theme.ink : theme.inkSoft,
+                    fontSize: 14, fontWeight: active ? 700 : 500, fontFamily: 'inherit',
+                    cursor: 'pointer', textAlign: 'left',
+                    WebkitTapHighlightColor: 'transparent',
+                    position: 'relative',
+                    transition: 'background 0.15s ease, color 0.15s ease',
+                  }}
+                >
+                  {active && (
+                    <span aria-hidden="true" style={{
+                      position: 'absolute', left: 0, top: 8, bottom: 8,
+                      width: 3, borderRadius: '0 3px 3px 0',
+                      background: '#B5894A',
+                    }}/>
+                  )}
+                  <span style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: 24, color: active ? theme.accent : theme.inkMuted,
+                  }}>
+                    <Icon name={tb.icon} size={18} stroke={active ? 2.1 : 1.85}/>
+                  </span>
+                  <span style={{ flex: 1 }}>{tb.label}</span>
+                </button>
+              );
+            })}
+            <div style={{ marginTop: 'auto', paddingTop: 16,
+              fontSize: 10, fontWeight: 600, color: theme.inkMuted,
+              letterSpacing: 1, textTransform: 'uppercase',
+              padding: '12px 12px 0', borderTop: `1px solid ${theme.rule}`,
+            }}>gsTeam · Admin</div>
+          </nav>
+          {/* Content area — no floating-nav clearance needed when sidebar is active */}
+          <div style={{
+            flex: 1, overflowY: 'auto', overflowX: 'hidden', position: 'relative',
+            paddingBottom: 32,
+          }}>
+            <div style={{ maxWidth: 1024, margin: '0 auto', padding: '0 8px' }}>
+              {renderContent()}
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div style={{
+          flex: 1, overflowY: 'auto', overflowX: 'hidden', position: 'relative',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 96px)',
+        }}>
+          <div style={{ margin: '0 auto' }}>
+            {renderContent()}
+          </div>
+        </div>
+      )}
 
       {/* Premium floating island tab bar.
          Glassmorphism: layered semi-transparent bg + heavy backdrop blur.
          Inner highlight at top + drop shadow + accent-tinted glow.
-         Position fixed on real mobile / desktop, absolute inside iOS frame. */}
+         Position fixed on real mobile / desktop, absolute inside iOS frame.
+         Hidden when desktop-admin sidebar nav is active. */}
+      {!(!isPhone && role === 'Admin' && vw >= 1100) && (
       <div style={{
         position: isPhone ? 'absolute' : 'fixed',
-        ...(!isPhone && role === 'Admin' && vw >= 1100
-          ? { left: '50%', transform: 'translateX(-50%)', width: 'min(560px, calc(100% - 32px))' }
-          : { left: 12, right: 12 }),
+        left: 12, right: 12,
         bottom: 'calc(env(safe-area-inset-bottom, 0px) + 14px)',
         display: 'flex', justifyContent: 'space-around', alignItems: 'center',
         // Layered glass: theme bg at 78% opacity + saturate-blur for depth
@@ -560,6 +631,7 @@ function App() {
           );
         })}
       </div>
+      )}
 
       {/* Log picker sheet (CA) */}
       {logSheet && role === 'CA' && (
