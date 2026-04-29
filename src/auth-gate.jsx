@@ -38,18 +38,44 @@ function AuthGate({ theme, onAuthed }) {
     }
   };
 
-  // On mount: check for existing session; fall back to login form after 2.5s
+  // On mount: check for existing session.
+  // 1. Read localStorage directly first — if Supabase has a stored auth token,
+  //    assume session is being recovered and stay in checking state.
+  // 2. If no stored token, fall through to login form immediately (no wait).
+  // 3. The onAuthStateChange listener handles the eventual session recovery.
+  // 4. Outer 10s safety net only triggers if Supabase truly hangs.
   React.useEffect(() => {
     let cancelled = false;
+    // Check localStorage for any Supabase auth token (key: sb-<ref>-auth-token)
+    let hasStoredSession = false;
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i) || '';
+        if (k.startsWith('sb-') && k.endsWith('-auth-token')) {
+          const v = localStorage.getItem(k);
+          if (v && v.length > 20) { hasStoredSession = true; break; }
+        }
+      }
+    } catch (_e) { /* localStorage may be disabled */ }
+
+    if (!hasStoredSession) {
+      // No stored session — go straight to login form, skip the verify step.
+      setPhase('needs-login');
+      return;
+    }
+
+    // Stored session exists — verify it. Long safety net (10s) so we don't
+    // flicker to login form on slow networks; the listener below picks it up
+    // when Supabase finishes recovery.
     const timeoutId = setTimeout(() => {
       if (!cancelled) setPhase('needs-login');
-    }, 2500);
+    }, 10000);
     (async () => {
       try {
         const session = await CABT_currentSession();
         if (cancelled) return;
+        if (!session) return; // no session — wait for listener or timeout
         clearTimeout(timeoutId);
-        if (!session) { setPhase('needs-login'); return; }
         const prof = await CABT_currentProfile();
         if (cancelled) return;
         onAuthed && onAuthed(session, prof);
@@ -94,19 +120,10 @@ function AuthGate({ theme, onAuthed }) {
     return (
       <div style={{
         minHeight: '100vh', background: theme.bg, color: theme.inkMuted,
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        fontFamily: theme.sans, fontSize: 13, gap: 16, padding: 20,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: theme.sans, fontSize: 13,
       }}>
-        <div>Verifying session…</div>
-        <button
-          onClick={() => setPhase('needs-login')}
-          style={{
-            background: 'transparent', border: `1px solid ${theme.rule}`,
-            borderRadius: 999, padding: '8px 16px', fontSize: 12,
-            color: theme.inkSoft, fontFamily: 'inherit', cursor: 'pointer',
-          }}>
-          Skip to sign in
-        </button>
+        Verifying session…
       </div>
     );
   }
