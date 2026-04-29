@@ -95,6 +95,81 @@ function _withTimeout(promise, ms, label, fallback = null) {
   ]);
 }
 
+// ── Web Push subscription helpers (PWA) ─────────────────────────────────────
+// VAPID public key is set on the server side; this is the matching client key.
+// When empty, push registration is disabled (graceful degradation).
+const CABT_VAPID_PUBLIC_KEY = ''; // TODO: set when web-push VAPID keys are generated
+
+function _urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; ++i) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+async function CABT_pushPermissionState() {
+  if (!('Notification' in window)) return 'unsupported';
+  return Notification.permission; // 'default' | 'granted' | 'denied'
+}
+
+async function CABT_pushSubscribe() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    throw new Error('push_unsupported');
+  }
+  const reg = await navigator.serviceWorker.ready;
+  // Already subscribed?
+  let sub = await reg.pushManager.getSubscription();
+  if (sub) return sub;
+  if (!CABT_VAPID_PUBLIC_KEY) throw new Error('vapid_key_not_configured');
+  sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: _urlBase64ToUint8Array(CABT_VAPID_PUBLIC_KEY),
+  });
+  // Persist to push_subscriptions table (service handles upsert by token uniqueness)
+  if (CABT_getApiMode() === 'supabase') {
+    try {
+      const sb = await CABT_sb();
+      const { data: { user } } = await sb.auth.getUser();
+      if (user) {
+        await sb.from('push_subscriptions').upsert({
+          profile_id: user.id,
+          platform: 'web',
+          token: JSON.stringify(sub.toJSON()),
+          last_seen: new Date().toISOString(),
+          revoked_at: null,
+        }, { onConflict: 'token' });
+      }
+    } catch (e) { console.warn('[CABT] push subscribe persist failed', e); }
+  }
+  return sub;
+}
+
+async function CABT_pushUnsubscribe() {
+  if (!('serviceWorker' in navigator)) return;
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  if (!sub) return;
+  const token = JSON.stringify(sub.toJSON());
+  await sub.unsubscribe();
+  if (CABT_getApiMode() === 'supabase') {
+    try {
+      const sb = await CABT_sb();
+      await sb.from('push_subscriptions').update({ revoked_at: new Date().toISOString() }).eq('token', token);
+    } catch (e) { /* non-fatal */ }
+  }
+}
+
+async function CABT_pushIsSubscribed() {
+  if (!('serviceWorker' in navigator)) return false;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    return !!sub;
+  } catch (_e) { return false; }
+}
+
 async function CABT_currentSession() {
   const sb = await CABT_sb();
   const result = await _withTimeout(sb.auth.getSession(), 2500, 'getSession', null);
@@ -400,4 +475,5 @@ Object.assign(window, {
   CABT_sb, CABT_SUPABASE_URL, CABT_SUPABASE_ANON_KEY,
   CABT_ROLE_LABELS, CABT_ROLE_SHORT, CABT_SALES_ROLE_LABELS, CABT_SALES_ROLE_SHORT,
   CABT_roleLabel, CABT_roleShort, CABT_inviteUser, CABT_editUser,
+  CABT_pushPermissionState, CABT_pushSubscribe, CABT_pushUnsubscribe, CABT_pushIsSubscribed,
 });

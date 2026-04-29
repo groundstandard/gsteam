@@ -27,9 +27,80 @@ function App() {
   const [pendingSync, setPendingSync] = React.useState(0);
   const [isOffline, setIsOffline] = React.useState(false);
   const [logSheet, setLogSheet] = React.useState(false);
+  const [updateWorker, setUpdateWorker] = React.useState(null); // PWA new version
+  const [installable, setInstallable] = React.useState(!!window.CABT_INSTALL_PROMPT);
+  const [installed, setInstalled] = React.useState(false);
+
+  // Listen for "new version available" event dispatched by index.html SW handler.
+  React.useEffect(() => {
+    const onUpdate = (e) => setUpdateWorker(e.detail?.worker || true);
+    const onInstallable = () => setInstallable(true);
+    const onInstalled = () => { setInstallable(false); setInstalled(true); };
+    window.addEventListener('cabt-update-available', onUpdate);
+    window.addEventListener('cabt-install-available', onInstallable);
+    window.addEventListener('cabt-install-completed', onInstalled);
+    return () => {
+      window.removeEventListener('cabt-update-available', onUpdate);
+      window.removeEventListener('cabt-install-available', onInstallable);
+      window.removeEventListener('cabt-install-completed', onInstalled);
+    };
+  }, []);
+
+  const acceptUpdate = () => {
+    if (updateWorker && updateWorker.postMessage) {
+      updateWorker.postMessage({ type: 'SKIP_WAITING' });
+    } else {
+      window.location.reload();
+    }
+  };
+
+  const promptInstall = async () => {
+    const p = window.CABT_INSTALL_PROMPT;
+    if (!p) return;
+    p.prompt();
+    const { outcome } = await p.userChoice;
+    if (outcome === 'accepted') setInstalled(true);
+    window.CABT_INSTALL_PROMPT = null;
+    setInstallable(false);
+  };
+
+  // Detect already-installed PWA (display-mode: standalone)
+  const isStandalone = typeof window !== 'undefined'
+    && (window.matchMedia('(display-mode: standalone)').matches
+        || window.navigator.standalone === true);
+
+  // Handle PWA manifest shortcuts on launch (?shortcut=ca-today, etc.)
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shortcut = params.get('shortcut');
+    if (!shortcut) return;
+    if (shortcut === 'ca-today')           { setRole('CA');    setRoute({ name: 'home', params: {} }); }
+    else if (shortcut === 'admin-approvals') { setRole('Admin'); setRoute({ name: 'home', params: {} }); }
+    else if (shortcut === 'sales-commissions') { setRole('Sales'); setRoute({ name: 'commissions', params: {} }); }
+    // Clear param so reload doesn't re-trigger
+    if (window.history.replaceState) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('shortcut');
+      url.searchParams.delete('source');
+      window.history.replaceState({}, '', url.pathname + (url.search || ''));
+    }
+  }, []);
 
   React.useEffect(() => { if (t.apiMode === 'local') CABT_saveState(state); }, [state, t.apiMode]);
-  React.useEffect(() => { setIsOffline(t.demoOffline); }, [t.demoOffline]);
+
+  // Real offline detection — listen to browser online/offline events.
+  // Tweak `demoOffline` overrides for testing (forces offline state).
+  React.useEffect(() => {
+    if (t.demoOffline) { setIsOffline(true); return; }
+    const update = () => setIsOffline(!navigator.onLine);
+    update();
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, [t.demoOffline]);
 
   // Sync apiMode tweak → api.jsx mode key
   React.useEffect(() => { CABT_setApiMode(t.apiMode); }, [t.apiMode]);
@@ -317,6 +388,44 @@ function App() {
           {!isOffline && pendingSync > 0 && (
             <button onClick={syncNow} style={{ background: 'transparent', border: 'none', color: '#8C5A00', fontWeight: 700, fontSize: 12, textDecoration: 'underline', cursor: 'pointer' }}>Sync now</button>
           )}
+        </div>
+      )}
+
+      {/* PWA "New version available" banner */}
+      {updateWorker && (
+        <div style={{
+          padding: '8px 16px', background: theme.accent + '20', color: theme.ink,
+          fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+          borderBottom: `1px solid ${theme.rule}`,
+        }}>
+          <Icon name="sync" size={14}/>
+          <span style={{ flex: 1 }}>New version available</span>
+          <button onClick={acceptUpdate} style={{
+            background: theme.accent, color: theme.accentInk, border: 'none',
+            fontWeight: 700, fontSize: 12, padding: '4px 10px', borderRadius: 999,
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}>Update</button>
+        </div>
+      )}
+
+      {/* PWA "Install app" banner — only when installable + not already installed */}
+      {installable && !installed && !isStandalone && (
+        <div style={{
+          padding: '8px 16px', background: '#0E1A35' + '15', color: theme.ink,
+          fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+          borderBottom: `1px solid ${theme.rule}`,
+        }}>
+          <Icon name="plus" size={14}/>
+          <span style={{ flex: 1 }}>Install gsTeam to your home screen</span>
+          <button onClick={() => setInstallable(false)} style={{
+            background: 'transparent', border: 'none', color: theme.inkMuted,
+            fontWeight: 600, fontSize: 11, padding: '4px 6px', cursor: 'pointer', fontFamily: 'inherit',
+          }}>Later</button>
+          <button onClick={promptInstall} style={{
+            background: theme.accent, color: theme.accentInk, border: 'none',
+            fontWeight: 700, fontSize: 12, padding: '4px 10px', borderRadius: 999,
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}>Install</button>
         </div>
       )}
 
