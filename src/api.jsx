@@ -472,6 +472,22 @@ async function CABT_inviteUser({ email, displayName, role, password, caId, sales
   return json;
 }
 
+// Look up a profile / auth user_id by email. Used by the admin Edit Teammate
+// flow when the cas / sales_team row doesn't have profile_id populated
+// (older seeds, or rows created before invite-only auth was wired).
+async function CABT_findUserIdByEmail(email) {
+  if (CABT_getApiMode() !== 'supabase') return null;
+  if (!email) return null;
+  const sb = await CABT_sb();
+  const { data, error } = await sb
+    .from('profiles')
+    .select('id')
+    .eq('email', email.trim().toLowerCase())
+    .maybeSingle();
+  if (error || !data) return null;
+  return data.id;
+}
+
 // F1.1.2 — calls the admin-edit-user Edge Function.
 // action='update_profile' or 'reset_password'. Caller must be owner/admin.
 async function CABT_editUser({ action, userId, ...rest }) {
@@ -509,6 +525,6 @@ Object.assign(window, {
   CABT_signOut, CABT_currentSession, CABT_currentProfile,
   CABT_sb, CABT_SUPABASE_URL, CABT_SUPABASE_ANON_KEY,
   CABT_ROLE_LABELS, CABT_ROLE_SHORT, CABT_SALES_ROLE_LABELS, CABT_SALES_ROLE_SHORT,
-  CABT_roleLabel, CABT_roleShort, CABT_inviteUser, CABT_editUser,
+  CABT_roleLabel, CABT_roleShort, CABT_inviteUser, CABT_editUser, CABT_findUserIdByEmail,
   CABT_pushPermissionState, CABT_pushSubscribe, CABT_pushUnsubscribe, CABT_pushIsSubscribed,
 });

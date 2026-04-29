@@ -494,8 +494,28 @@ const EDIT_ERROR_COPY = {
 
 function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
   // `kind` is 'ca' or 'sales'. `row` is the camelCased state.cas[i] or state.sales[i] entry.
-  // We need profileId (the auth.users id) to address the EF.
-  const userId = row.profileId;
+  // We need profileId (the auth.users id) to address the EF. If the row was
+  // seeded without profile_id, fall back to looking up by email.
+  const [userId, setUserId] = React.useState(row.profileId || null);
+  const [resolvingId, setResolvingId] = React.useState(!row.profileId);
+
+  React.useEffect(() => {
+    if (userId) { setResolvingId(false); return; }
+    if (!row.email) { setResolvingId(false); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const id = await CABT_findUserIdByEmail(row.email);
+        if (!cancelled) {
+          setUserId(id || null);
+          setResolvingId(false);
+        }
+      } catch (_e) {
+        if (!cancelled) setResolvingId(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [row.email, userId]);
   const isCa    = kind === 'ca';
   const isSales = kind === 'sales';
 
@@ -567,7 +587,8 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
   const submitEdit = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     setErrMsg(null);
-    if (!userId) return setErrMsg('Could not identify the teammate (no profile_id on row).');
+    if (resolvingId) return setErrMsg('Looking up teammate… try again in a moment.');
+    if (!userId) return setErrMsg(`No auth account is linked to ${row.email || 'this teammate'}. Have them sign in once first, or re-invite them.`);
     if (!hasChanges) return setErrMsg('Nothing to save — no fields changed.');
     setSubmitting(true);
     try {
@@ -583,7 +604,8 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
   const submitReset = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     setErrMsg(null);
-    if (!userId) return setErrMsg('Could not identify the teammate.');
+    if (resolvingId) return setErrMsg('Looking up teammate… try again in a moment.');
+    if (!userId) return setErrMsg(`No auth account is linked to ${row.email || 'this teammate'}. Have them sign in once first, or re-invite them.`);
     if (newPassword.length < 8) return setErrMsg('Password must be at least 8 characters.');
     if (newPassword !== confirmPassword) return setErrMsg('Passwords don\'t match.');
     setSubmitting(true);
