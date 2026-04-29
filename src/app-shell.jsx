@@ -462,11 +462,20 @@ function App() {
               padding: '0 12px 8px',
             }}>{role === 'CA' ? 'Client Associate' : role === 'Sales' ? 'Sales' : 'Admin'}</div>
             {tabs.map(tb => {
-              const active = route.name === tb.name;
+              const active = route.name === tb.name
+                || (tb.name === 'log-picker' && (route.name === 'log-metrics' || route.name === 'log-event' || route.name === 'log-survey'));
               return (
                 <button
                   key={tb.name}
-                  onClick={() => { setHistory([]); setRoute({ name: tb.name, params: {} }); }}
+                  onClick={() => {
+                    if (tb.name === 'log-picker') {
+                      setLogSheet(true);
+                      return;
+                    }
+                    setLogSheet(false); // Close picker if switching to a non-log tab
+                    setHistory([]);
+                    setRoute({ name: tb.name, params: {} });
+                  }}
                   className="cabt-btn-press"
                   aria-current={active ? 'page' : undefined}
                   style={{
@@ -563,6 +572,7 @@ function App() {
               className="cabt-tab-btn"
               onClick={() => {
                 if (tb.name === 'log-picker') { setLogSheet(true); return; }
+                setLogSheet(false); // Close picker on any other tab tap
                 setHistory([]); setRoute({ name: tb.name, params: {} });
               }}
               aria-label={tb.label}

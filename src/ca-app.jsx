@@ -40,6 +40,69 @@ function CAHome({ state, ca, theme, density, navigate }) {
   const bonusColor = STATUS[status];
   const projected = score.finalPayout;
 
+  // Empty state: no clients assigned to this CA AND nothing logged yet.
+  // Show a friendly prompt instead of an all-zero scorecard. Points the user
+  // at the Log button so they know how to start.
+  const isEmpty = myClients.length === 0 && recentActivity.length === 0;
+  if (isEmpty) {
+    return (
+      <div style={{ padding: '24px 16px 120px', display: 'flex', flexDirection: 'column', gap: 18, alignItems: 'center', textAlign: 'center' }}>
+        <div style={{
+          width: 72, height: 72, borderRadius: '50%',
+          background: theme.accent + '22',
+          border: `1px solid ${theme.accent}55`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          marginTop: 32,
+        }}>
+          <Icon name="plus" size={32} color={theme.accent} stroke={2.4}/>
+        </div>
+        <div>
+          <div style={{
+            fontFamily: theme.serif, fontSize: 24, fontWeight: 600, color: theme.ink,
+            letterSpacing: -0.4, marginBottom: 6,
+          }}>Welcome, {ca && ca.name ? ca.name.split(' ')[0] : 'there'}</div>
+          <div style={{
+            fontSize: 14.5, color: theme.inkMuted, lineHeight: 1.5, maxWidth: 360, margin: '0 auto',
+          }}>
+            Your scorecard will fill in as you start logging. Tap the
+            <strong style={{ color: theme.accent, fontWeight: 700 }}> Log <span aria-hidden="true">＋</span> </strong>
+            button below to record monthly metrics, growth events, or client surveys.
+          </div>
+        </div>
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 10,
+          marginTop: 8, width: '100%', maxWidth: 380,
+        }}>
+          {[
+            { icon: 'chart', label: 'Monthly metrics', desc: 'Leads, ad spend, MRR, attrition' },
+            { icon: 'cal',   label: 'Growth event',    desc: 'Workshop, gear sale, milestone' },
+            { icon: 'star',  label: 'Client survey',   desc: 'Satisfaction snapshot' },
+          ].map((it) => (
+            <div key={it.label} style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              background: theme.surface, border: `1px solid ${theme.rule}`,
+              borderRadius: 14, padding: '12px 14px', textAlign: 'left',
+            }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                background: theme.accent + '15', color: theme.accent,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}><Icon name={it.icon} size={18}/></div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: theme.ink }}>{it.label}</div>
+                <div style={{ fontSize: 12, color: theme.inkMuted, marginTop: 1 }}>{it.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{
+          marginTop: 24, fontSize: 11, color: theme.inkMuted,
+          letterSpacing: 1, textTransform: 'uppercase', fontWeight: 600,
+        }}>↓ Use the Log button below to start</div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: '8px 16px 100px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Greeting + bonus card */}
