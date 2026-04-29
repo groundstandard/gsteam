@@ -757,10 +757,18 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
               }}>{errMsg}</div>
             )}
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+            {!hasChanges && !submitting && (
+              <div style={{
+                fontSize: 12, color: theme.inkMuted, textAlign: 'center',
+                padding: '4px 0', fontStyle: 'italic',
+              }}>
+                Edit any field above to enable Save.
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
               <Button theme={theme} variant="secondary" onClick={onClose} disabled={submitting}>Cancel</Button>
-              <Button theme={theme} variant="primary" fullWidth type="submit" disabled={submitting || !hasChanges} onClick={submitEdit}>
-                {submitting ? 'Saving…' : (hasChanges ? 'Save changes' : 'No changes')}
+              <Button theme={theme} variant="primary" fullWidth type="submit" disabled={submitting || !hasChanges} loading={submitting} onClick={submitEdit}>
+                {submitting ? 'Saving…' : 'Save changes'}
               </Button>
             </div>
           </form>
