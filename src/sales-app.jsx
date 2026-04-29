@@ -183,7 +183,7 @@ function LogContractForm({ state, rep, theme, navigate, onSubmit }) {
   };
 
   return (
-    <div style={{ padding: '12px 16px 120px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <FormShell theme={theme}>
       <Banner tone="info" icon="alert" theme={theme}>
         CA assignment is left blank — admin will assign after you submit.
       </Banner>
@@ -254,7 +254,7 @@ function LogContractForm({ state, rep, theme, navigate, onSubmit }) {
           {busy ? 'Saving…' : 'Save contract'}
         </Button>
       </StickyBar>
-    </div>
+    </FormShell>
   );
 }
 
@@ -408,7 +408,7 @@ function LogAdjustmentForm({ state, rep, theme, isAdmin, navigate, onSubmit }) {
   }));
 
   return (
-    <div style={{ padding: '12px 16px 120px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <FormShell theme={theme}>
       {errors._root && <Banner tone="error" icon="alert" theme={theme}>{errors._root}</Banner>}
       <Field label="Date" theme={theme}>
         <Input type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} theme={theme}/>
@@ -457,7 +457,7 @@ function LogAdjustmentForm({ state, rep, theme, isAdmin, navigate, onSubmit }) {
           {busy ? 'Saving…' : 'Submit adjustment'}
         </Button>
       </StickyBar>
-    </div>
+    </FormShell>
   );
 }
 

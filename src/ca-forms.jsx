@@ -178,7 +178,7 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
   };
 
   return (
-    <div style={{ padding: '8px 16px 120px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <FormShell theme={theme} gap={12}>
       <div style={{ fontSize: 13, color: theme.inkSoft, padding: '0 4px' }}>
         Prefilled from last month where possible. Tap a section to edit.
       </div>
@@ -263,18 +263,39 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
           {editing ? 'Save changes' : 'Save monthly metrics'}
         </Button>
       </StickyBar>
-    </div>
+    </FormShell>
   );
 }
 
 function StickyBar({ theme, children }) {
+  // Sticky to viewport bottom while scrolling. Honors safe-area on iOS PWA
+  // and respects the form's max-width so the buttons don't stretch full-bleed
+  // on desktop. position: sticky keeps it inside the form layout (no overlap
+  // with the floating bottom nav, which is z-index 100 + position: fixed).
   return (
     <div style={{
-      position: 'absolute', bottom: 0, left: 0, right: 0,
-      padding: '12px 16px 28px',
-      background: `linear-gradient(to top, ${theme.bg} 60%, transparent)`,
-      display: 'flex', gap: 8,
+      position: 'sticky',
+      bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
+      marginTop: 12,
+      padding: '12px 0 4px',
+      background: `linear-gradient(to top, ${theme.bg} 75%, ${theme.bg}E0 90%, transparent)`,
+      display: 'flex', gap: 10,
+      zIndex: 5,
     }}>{children}</div>
+  );
+}
+
+// Form container — caps width on desktop so labels + inputs stay grouped
+// instead of stretching across a 1900px monitor. Mobile fills available width.
+function FormShell({ theme, children, gap = 14 }) {
+  return (
+    <div style={{
+      padding: '12px 16px calc(env(safe-area-inset-bottom, 0px) + 100px)',
+      maxWidth: 640, margin: '0 auto',
+      display: 'flex', flexDirection: 'column', gap,
+    }}>
+      {children}
+    </div>
   );
 }
 
@@ -316,7 +337,7 @@ function LogEventForm({ state, ca, theme, presetClientId, navigate, onSubmit }) 
     });
   };
   return (
-    <div style={{ padding: '12px 16px 120px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <FormShell theme={theme}>
       <Field label="Event date" required error={errors.date} theme={theme}>
         <Input type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} theme={theme}/>
       </Field>
@@ -344,7 +365,7 @@ function LogEventForm({ state, ca, theme, presetClientId, navigate, onSubmit }) 
         <Button theme={theme} variant="secondary" onClick={() => navigate('back')}>Cancel</Button>
         <Button theme={theme} variant="primary" fullWidth onClick={submit}>Save event</Button>
       </StickyBar>
-    </div>
+    </FormShell>
   );
 }
 
@@ -377,7 +398,7 @@ function LogSurveyForm({ state, ca, theme, presetClientId, navigate, onSubmit })
     onSubmit({ id: `SR-${Date.now()}`, ...form, submittedBy: ca.id });
   };
   return (
-    <div style={{ padding: '12px 16px 120px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <FormShell theme={theme}>
       <Field label="Date" required theme={theme}>
         <Input type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} theme={theme}/>
       </Field>
@@ -412,8 +433,8 @@ function LogSurveyForm({ state, ca, theme, presetClientId, navigate, onSubmit })
         <Button theme={theme} variant="secondary" onClick={() => navigate('back')}>Cancel</Button>
         <Button theme={theme} variant="primary" fullWidth onClick={submit}>Save survey</Button>
       </StickyBar>
-    </div>
+    </FormShell>
   );
 }
 
-Object.assign(window, { LogMetricsForm, LogEventForm, LogSurveyForm, StickyBar });
+Object.assign(window, { LogMetricsForm, LogEventForm, LogSurveyForm, StickyBar, FormShell });
