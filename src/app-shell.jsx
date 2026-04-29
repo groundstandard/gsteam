@@ -442,9 +442,10 @@ function App() {
         </div>
       )}
 
-      {/* Desktop admin uses a sidebar nav instead of a floating bottom bar.
-         Mobile + non-admin users still get the floating island tab bar below. */}
-      {(!isPhone && role === 'Admin' && vw >= 1100) ? (
+      {/* Admin-account users get a sidebar nav on desktop (≥1100px) for ALL
+         tabs they view — CA, Sales, Admin. Mobile users + non-admin accounts
+         still get the floating island tab bar. */}
+      {(!isPhone && isAdminAccount && vw >= 1100) ? (
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
           {/* Left sidebar nav — desktop admin only */}
           <nav style={{
@@ -459,7 +460,7 @@ function App() {
               fontSize: 10, fontWeight: 700, color: theme.inkMuted,
               letterSpacing: 1, textTransform: 'uppercase',
               padding: '0 12px 8px',
-            }}>Admin</div>
+            }}>{role === 'CA' ? 'Client Associate' : role === 'Sales' ? 'Sales' : 'Admin'}</div>
             {tabs.map(tb => {
               const active = route.name === tb.name;
               return (
@@ -502,7 +503,7 @@ function App() {
               fontSize: 10, fontWeight: 600, color: theme.inkMuted,
               letterSpacing: 1, textTransform: 'uppercase',
               padding: '12px 12px 0', borderTop: `1px solid ${theme.rule}`,
-            }}>gsTeam · Admin</div>
+            }}>gsTeam · {role}</div>
           </nav>
           {/* Content area — full-width admin console (Bobby asked for full
              screen on all devices). No floating-nav clearance needed when
@@ -533,7 +534,7 @@ function App() {
          Inner highlight at top + drop shadow + accent-tinted glow.
          Position fixed on real mobile / desktop, absolute inside iOS frame.
          Hidden when desktop-admin sidebar nav is active. */}
-      {!(!isPhone && role === 'Admin' && vw >= 1100) && (
+      {!(!isPhone && isAdminAccount && vw >= 1100) && (
       <div style={{
         position: isPhone ? 'absolute' : 'fixed',
         left: 12, right: 12,
@@ -675,7 +676,13 @@ function App() {
   // Desktop admin mode: wide screen + admin role → full-bleed wide layout (no iPhone frame).
   // Bobby explicitly asked for desktop-friendly admin (2026-04-29).
   const isDesktop = vw >= 1100;
-  const isDesktopAdmin = isDesktop && role === 'Admin';
+  // Admin-account detection — applies the desktop layout (sidebar nav,
+  // full-screen content, no iPhone frame) for ANY tab the admin views,
+  // not only when they're on the Admin tab. So an admin browsing as CA
+  // or Sales still gets the desktop console treatment.
+  const isAdminAccount = (authedProfile && ['owner', 'admin', 'integrator'].includes(authedProfile.role))
+    || (state && (state.role === 'owner' || state.role === 'admin' || state.role === 'integrator'));
+  const isDesktopAdmin = isDesktop && isAdminAccount;
   const useFrame = t.showFrame && vw >= 720 && !isDesktopAdmin;
   const isTablet = vw >= 720 && vw < 1100;
 
