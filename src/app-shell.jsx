@@ -505,56 +505,76 @@ function App() {
                 touchAction: 'manipulation',
               }}
             >
-              {/* Animated gradient pill highlight behind active non-primary tab */}
+              {/* Radial halo glow behind active icon — soft, premium, Apple-style.
+                 No rectangular pill; just a glowing aura that makes the icon
+                 feel "lit from within". Uses radial-gradient + blur. */}
               {active && !tb.primary && (
                 <span aria-hidden="true" style={{
-                  position: 'absolute', inset: '4px 6px',
-                  background: `linear-gradient(180deg, ${theme.accent}28, ${theme.accent}14)`,
-                  borderRadius: 14, zIndex: 0,
-                  animation: 'tabPillIn 0.24s cubic-bezier(0.16, 1, 0.3, 1)',
-                  boxShadow: `inset 0 1px 0 ${theme.accent}33`,
+                  position: 'absolute', top: 4, left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: 44, height: 44, borderRadius: '50%',
+                  background: `radial-gradient(circle, ${theme.accent}55 0%, ${theme.accent}22 40%, transparent 70%)`,
+                  filter: 'blur(2px)',
+                  zIndex: 0,
+                  animation: 'haloIn 0.32s cubic-bezier(0.16, 1, 0.3, 1)',
                 }}/>
               )}
-              {/* Tiny gold accent bar indicator above active label */}
+              {/* Soft inner-circle highlight for active state — subtle ring around icon */}
               {active && !tb.primary && (
                 <span aria-hidden="true" style={{
-                  position: 'absolute', top: 2, left: '50%', transform: 'translateX(-50%)',
-                  width: 16, height: 2.5, borderRadius: 2,
-                  background: theme.accent,
-                  boxShadow: `0 0 8px ${theme.accent}99`,
-                  zIndex: 2,
-                  animation: 'tabPillIn 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+                  position: 'absolute', top: 8, left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: 36, height: 36, borderRadius: '50%',
+                  background: `linear-gradient(180deg, ${theme.accent}22, ${theme.accent}10)`,
+                  border: `1px solid ${theme.accent}33`,
+                  boxShadow: `inset 0 1px 0 ${theme.accent}44`,
+                  zIndex: 0,
+                  animation: 'haloIn 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+                }}/>
+              )}
+              {/* Premium top indicator: slim line that animates in width */}
+              {active && !tb.primary && (
+                <span aria-hidden="true" style={{
+                  position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
+                  width: 22, height: 3, borderRadius: '0 0 3px 3px',
+                  background: `linear-gradient(90deg, transparent, ${theme.accent}, transparent)`,
+                  boxShadow: `0 1px 12px ${theme.accent}99, 0 0 4px ${theme.accent}`,
+                  zIndex: 3,
+                  animation: 'topBarIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
                 }}/>
               )}
               {tb.primary ? (
                 <div style={{
-                  width: 46, height: 46, borderRadius: 23,
-                  background: `linear-gradient(180deg, ${theme.accent} 0%, ${theme.accent}E0 100%)`,
+                  width: 48, height: 48, borderRadius: 24,
+                  background: `radial-gradient(circle at 30% 25%, ${theme.accent} 0%, ${theme.accent}D8 60%, ${theme.accent}B0 100%)`,
                   color: theme.accentInk,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: 2,
                   boxShadow: active
-                    ? `0 8px 22px ${theme.accent}77, 0 2px 4px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.35)`
-                    : `0 6px 16px ${theme.accent}55, 0 2px 4px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.3)`,
-                  transform: active ? 'translateY(-3px) scale(1.04)' : 'translateY(-1px) scale(1)',
-                  transition: 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease',
+                    ? `0 10px 28px ${theme.accent}88, 0 4px 8px ${theme.accent}55, 0 1px 2px rgba(0,0,0,0.25), inset 0 1.5px 0 rgba(255,255,255,0.45), inset 0 -1px 0 rgba(0,0,0,0.08)`
+                    : `0 8px 20px ${theme.accent}66, 0 2px 4px rgba(0,0,0,0.18), inset 0 1.5px 0 rgba(255,255,255,0.4)`,
+                  transform: active ? 'translateY(-4px) scale(1.06)' : 'translateY(-2px) scale(1)',
+                  transition: 'transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease',
                   position: 'relative', zIndex: 1,
                 }}><Icon name={tb.icon} size={22} stroke={2.4}/></div>
               ) : (
                 <span style={{
                   position: 'relative', zIndex: 1,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transform: active ? 'translateY(-1px)' : 'translateY(0)',
-                  transition: 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
-                  filter: active ? `drop-shadow(0 0 6px ${theme.accent}55)` : 'none',
+                  transform: active ? 'translateY(-1px) scale(1.08)' : 'translateY(0) scale(1)',
+                  transition: 'transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), filter 0.18s ease',
+                  filter: active ? `drop-shadow(0 0 8px ${theme.accent}88) drop-shadow(0 1px 2px ${theme.accent}33)` : 'none',
+                  marginTop: 4,
                 }}>
                   <Icon name={tb.icon} size={22} stroke={active ? 2.2 : 1.85}/>
                 </span>
               )}
               <span style={{
                 position: 'relative', zIndex: 1,
-                fontSize: 10.5, fontWeight: active ? 700 : 600, letterSpacing: 0.2,
-                transition: 'font-weight 0.15s ease, color 0.18s ease',
+                fontSize: 10.5, fontWeight: active ? 700 : 600,
+                letterSpacing: active ? 0.4 : 0.2,
+                transition: 'font-weight 0.15s ease, color 0.2s ease, letter-spacing 0.2s ease',
+                marginTop: active && !tb.primary ? 4 : 2,
               }}>{tb.label}</span>
             </button>
           );
@@ -655,6 +675,15 @@ function App() {
         @keyframes sheetIn { from { transform: translateY(100%); } to { transform: translateY(0); } }
         @keyframes scrimIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes tabPillIn { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
+        @keyframes haloIn {
+          0%   { opacity: 0; transform: translateX(-50%) scale(0.6); }
+          60%  { opacity: 1; transform: translateX(-50%) scale(1.08); }
+          100% { opacity: 1; transform: translateX(-50%) scale(1); }
+        }
+        @keyframes topBarIn {
+          0%   { opacity: 0; transform: translateX(-50%) scaleX(0.2); }
+          100% { opacity: 1; transform: translateX(-50%) scaleX(1); }
+        }
         @keyframes modalIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         body { margin: 0; }
