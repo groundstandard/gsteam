@@ -54,11 +54,19 @@ function scoreToStatus(score) {
   return 'red';
 }
 
+// Coerce-to-number with safe default. Live Supabase rows can have null/missing
+// fields where local fixtures had real numbers — without this, math goes NaN.
+const _n = (v, d = 0) => {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : d;
+};
+
 // ── Per-client sub-scores (simplified mirror of the Sheet) ─────────────────
 function clientSubScores(client, metrics, surveys, config) {
-  const cMetrics = metrics
+  const cfg = config || {};
+  const cMetrics = (metrics || [])
     .filter(m => m.clientId === client.id)
-    .sort((a, b) => a.month.localeCompare(b.month));
+    .sort((a, b) => (a.month || '').localeCompare(b.month || ''));
   const recent = cMetrics.slice(-3); // last 3 months
 
   if (recent.length === 0) {
@@ -66,56 +74,68 @@ function clientSubScores(client, metrics, surveys, config) {
   }
 
   // Revenue: avg client MRR vs retainer
-  const avgMRR = recent.reduce((s, m) => s + m.clientMRR, 0) / recent.length;
-  const revenue = clamp(avgMRR / Math.max(client.monthlyRetainer, 1), 0, 1.2);
+  const avgMRR = recent.reduce((s, m) => s + _n(m.clientMRR), 0) / recent.length;
+  const revenue = clamp(avgMRR / Math.max(_n(client.monthlyRetainer), 1), 0, 1.2);
 
-  // Ad Efficiency: spent within target band of gross revenue
-  const adRatios = recent.map(m => m.adSpend / Math.max(m.clientGrossRevenue, 1));
+  // Ad Efficiency: spent within target band of gross revenue.
+  // Some live rows lack clientGrossRevenue; fall back to MRR as proxy.
+  const adRatios = recent.map(m => {
+    const gross = _n(m.clientGrossRevenue) || _n(m.clientMRR);
+    return _n(m.adSpend) / Math.max(gross, 1);
+  });
   const avgAdRatio = adRatios.reduce((a, b) => a + b, 0) / adRatios.length;
-  const target = config.adSpendPctOfGross;
+  const target = _n(cfg.adSpendPctOfGross, 0.10);
   const adEfficiency = avgAdRatio === 0 ? 0
     : clamp(1 - Math.abs(avgAdRatio - target) / target, 0, 1);
 
   // Funnel: avg of 3 conversion floors
   const fScores = recent.map(m => {
-    const booking = m.apptsBooked / Math.max(m.leadsGenerated, 1);
-    const show = m.leadsShowed / Math.max(m.apptsBooked, 1);
-    const close = m.leadsSigned / Math.max(m.leadsShowed, 1);
+    const booking = _n(m.apptsBooked) / Math.max(_n(m.leadsGenerated), 1);
+    const show    = _n(m.leadsShowed) / Math.max(_n(m.apptsBooked),   1);
+    const close   = _n(m.leadsSigned) / Math.max(_n(m.leadsShowed),   1);
     return (
-      clamp(booking / config.bookingFloor, 0, 1) +
-      clamp(show / config.showFloor, 0, 1) +
-      clamp(close / config.closeFloor, 0, 1)
+      clamp(booking / Math.max(_n(cfg.bookingFloor, 0.30), 0.01), 0, 1) +
+      clamp(show    / Math.max(_n(cfg.showFloor,    0.50), 0.01), 0, 1) +
+      clamp(close   / Math.max(_n(cfg.closeFloor,   0.30), 0.01), 0, 1)
     ) / 3;
   });
   const funnel = fScores.reduce((a, b) => a + b, 0) / fScores.length;
 
   // Attrition: monthly cancel rate
-  const attRates = recent.map(m => m.studentsCancelled / Math.max(m.priorStudents, 1));
+  const attRates = recent.map(m => _n(m.studentsCancelled) / Math.max(_n(m.priorStudents), 1));
   const avgAtt = attRates.reduce((a, b) => a + b, 0) / attRates.length;
+  const greenFloor = _n(cfg.attritionGreenFloor, 0.85);
+  const criticalCeil = _n(cfg.attritionCriticalCeiling, 0.70);
   let attrition;
-  if (avgAtt <= config.attritionGreenFloor) attrition = 1;
-  else if (avgAtt >= config.attritionCriticalCeiling) attrition = 0.4;
-  else attrition = 1 - (avgAtt - config.attritionGreenFloor) /
-    (config.attritionCriticalCeiling - config.attritionGreenFloor) * 0.6;
+  if (avgAtt <= greenFloor) attrition = 1;
+  else if (avgAtt >= criticalCeil) attrition = 0.4;
+  else attrition = 1 - (avgAtt - greenFloor) / Math.max((criticalCeil - greenFloor), 0.01) * 0.6;
 
   // Satisfaction: avg of recent (lookback) survey responses
   const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - config.satisfactionLookbackMonths);
-  const recentSurveys = surveys.filter(s =>
-    s.clientId === client.id && new Date(s.date) >= cutoff
+  cutoff.setMonth(cutoff.getMonth() - _n(cfg.satisfactionLookbackMonths, 3));
+  const recentSurveys = (surveys || []).filter(s =>
+    s.clientId === client.id && s.date && new Date(s.date) >= cutoff
   );
   let satisfaction;
   if (recentSurveys.length === 0) {
-    satisfaction = config.noResponsePenalty;
+    satisfaction = _n(cfg.noResponsePenalty, 0.5);
   } else {
-    const avg = recentSurveys.reduce((s, r) =>
-      s + (r.overall + r.responsiveness + r.followThrough + r.communication) / 4, 0
-    ) / recentSurveys.length;
-    satisfaction = clamp(avg / 5, 0, 1);
+    // Live schema: surveys.score is a single int 1–10. Local fixtures had
+    // 4 sub-scores (overall / responsiveness / followThrough / communication
+    // each on a 1–5 scale). Support both:
+    //   - if r.score exists, use that on a 1–10 scale
+    //   - else avg the 4 sub-scores on a 1–5 scale
+    const total = recentSurveys.reduce((s, r) => {
+      if (r.score != null) return s + _n(r.score) / 10;
+      const sub = (_n(r.overall) + _n(r.responsiveness) + _n(r.followThrough) + _n(r.communication)) / 4;
+      return s + sub / 5;
+    }, 0);
+    satisfaction = clamp(total / recentSurveys.length, 0, 1);
   }
 
   // Growth: based on MRR trajectory + add-on
-  const first = recent[0].clientMRR, last = recent[recent.length - 1].clientMRR;
+  const first = _n(recent[0].clientMRR), last = _n(recent[recent.length - 1].clientMRR);
   const trend = (last - first) / Math.max(first, 1);
   let growth = clamp(0.6 + trend * 4, 0, 1);
   if (client.hasMembershipAddon) growth = Math.min(1, growth + 0.1);
@@ -127,10 +147,23 @@ function clientSubScores(client, metrics, surveys, config) {
 
 // ── Per-CA scorecard ───────────────────────────────────────────────────────
 function caScorecard(ca, state) {
-  const myClients = state.clients.filter(c => c.assignedCA === ca.id && !c.cancelDate);
+  if (!ca) {
+    return {
+      composite: 0, finalPayout: 0, maxPayout: 7500,
+      bookCompleteness: 1, performance: 0, retention: 0, growth: 0,
+      clients: [],
+    };
+  }
+  const cfg = (state && state.config) || {};
+  const allClients = (state && state.clients) || [];
+  const allMetrics = (state && state.monthlyMetrics) || [];
+  const allSurveys = (state && state.surveys) || [];
+  const allEvents  = (state && state.growthEvents) || [];
+
+  const myClients = allClients.filter(c => c.assignedCA === ca.id && !c.cancelDate);
   if (myClients.length === 0) {
     return {
-      composite: 0, finalPayout: 0, maxPayout: 0,
+      composite: 0, finalPayout: 0, maxPayout: 7500,
       bookCompleteness: 1, performance: 0, retention: 0, growth: 0,
       clients: [],
     };
@@ -138,48 +171,49 @@ function caScorecard(ca, state) {
 
   const subs = myClients.map(c => ({
     client: c,
-    sub: clientSubScores(c, state.monthlyMetrics, state.surveys, state.config),
+    sub: clientSubScores(c, allMetrics, allSurveys, cfg),
   }));
   const validSubs = subs.filter(s => s.sub.composite != null);
 
   const avg = (arr, key) => {
-    const vals = arr.map(s => s.sub[key]).filter(v => v != null);
+    const vals = arr.map(s => s.sub[key]).filter(v => v != null && Number.isFinite(v));
     return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
   };
 
-  // Performance bucket: avg of revenue/ad/funnel
   const performance = (avg(validSubs, 'revenue') + avg(validSubs, 'adEfficiency') + avg(validSubs, 'funnel')) / 3;
-  // Retention bucket: avg of attrition + satisfaction
   const retention = (avg(validSubs, 'attrition') + avg(validSubs, 'satisfaction')) / 2;
-  // Growth bucket: growth sub + count of growth events this quarter
-  const qStart = new Date(state.config.quarterStart);
-  const myEvents = state.growthEvents.filter(e => {
-    const c = state.clients.find(cl => cl.id === e.clientId);
-    return c && c.assignedCA === ca.id && new Date(e.date) >= qStart;
+
+  // Quarter window — fall back to current quarter if config doesn't set one
+  const qStartIso = cfg.quarterStart || `${new Date().getFullYear()}-${String(Math.floor(new Date().getMonth() / 3) * 3 + 1).padStart(2, '0')}-01`;
+  const qEndIso   = cfg.quarterEnd   || qStartIso; // 1-month fallback if missing
+  const qStart = new Date(qStartIso);
+  const myEvents = allEvents.filter(e => {
+    const c = allClients.find(cl => cl.id === e.clientId);
+    return c && c.assignedCA === ca.id && e.date && new Date(e.date) >= qStart;
   });
-  const eventBoost = clamp(myEvents.length / (myClients.length * 1.5), 0, 1);
+  const eventBoost = clamp((myEvents.length || 0) / Math.max(myClients.length * 1.5, 1), 0, 1);
   const growth = (avg(validSubs, 'growth') + eventBoost) / 2;
 
-  // Book Data Completeness: how many client-months in current quarter are filled
-  const monthsInQuarter = monthsBetween(state.config.quarterStart, state.config.quarterEnd) + 1;
+  const monthsInQuarter = Math.max(monthsBetween(qStartIso, qEndIso) + 1, 1);
   const expected = myClients.length * monthsInQuarter;
-  const filled = state.monthlyMetrics.filter(m => {
-    const c = state.clients.find(cl => cl.id === m.clientId);
-    return c && c.assignedCA === ca.id &&
-      m.month >= state.config.quarterStart && m.month <= state.config.quarterEnd;
+  const filled = allMetrics.filter(m => {
+    const c = allClients.find(cl => cl.id === m.clientId);
+    return c && c.assignedCA === ca.id && m.month >= qStartIso && m.month <= qEndIso;
   }).length;
   const bookCompleteness = expected > 0 ? clamp(filled / expected, 0, 1) : 1;
 
-  // Composite: avg of buckets, gated by completeness on Performance
   const composite = (performance * bookCompleteness + retention + growth) / 3;
-
-  // Payout: $750 per 0.10 of composite, max ~$7,500
   const maxPayout = 7500;
-  const finalPayout = Math.round(composite * maxPayout);
+  const safeComposite = Number.isFinite(composite) ? composite : 0;
+  const finalPayout = Math.round(safeComposite * maxPayout);
 
   return {
-    composite, finalPayout, maxPayout,
-    bookCompleteness, performance, retention, growth,
+    composite: safeComposite,
+    finalPayout, maxPayout,
+    bookCompleteness: Number.isFinite(bookCompleteness) ? bookCompleteness : 1,
+    performance: Number.isFinite(performance) ? performance : 0,
+    retention:   Number.isFinite(retention)   ? retention   : 0,
+    growth:      Number.isFinite(growth)      ? growth      : 0,
     clients: subs,
   };
 }
