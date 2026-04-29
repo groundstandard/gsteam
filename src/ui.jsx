@@ -253,39 +253,189 @@ function Input({ value, onChange, type = 'text', placeholder, theme, prefix, suf
   );
 }
 
-function Select({ value, onChange, options, theme, placeholder = '— select —' }) {
-  const [focused, setFocused] = React.useState(false);
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', height: 48,
-      background: theme.bgElev,
-      border: `1px solid ${focused ? theme.accent : theme.rule}`,
-      borderRadius: 12, padding: '0 14px',
-      transition: 'border-color 0.18s ease, box-shadow 0.18s ease',
-      boxShadow: focused ? `0 0 0 3px ${theme.accent}33` : 'none',
-      position: 'relative',
-    }}
-    onFocus={() => setFocused(true)}
-    onBlur={() => setFocused(false)}
+// Custom branded dropdown — replaces native <select> so we can fully style
+// the options panel. Renders via React portal to document.body so it escapes
+// any parent with overflow: hidden (the Body container, scroll wrappers, etc).
+// Position is computed from the trigger button's getBoundingClientRect.
+function Select({ value, onChange, options, theme, placeholder = '— select —', disabled = false }) {
+  const [open, setOpen] = React.useState(false);
+  const [focusIdx, setFocusIdx] = React.useState(-1);
+  const [pos, setPos] = React.useState(null); // {left, top, width, dropUp}
+  const triggerRef = React.useRef(null);
+  const panelRef = React.useRef(null);
+
+  const norm = React.useMemo(() => options.map(o => (
+    typeof o === 'object' ? { value: o.value, label: o.label } : { value: o, label: o }
+  )), [options]);
+  const selected = norm.find(o => String(o.value) === String(value));
+  const displayLabel = selected ? selected.label : placeholder;
+  const hasValue = !!selected;
+
+  // Compute panel position from trigger rect. Prefers below; flips above if no room.
+  const computePos = React.useCallback(() => {
+    if (!triggerRef.current) return;
+    const r = triggerRef.current.getBoundingClientRect();
+    const PANEL_MAX = 280;
+    const SPACE_BELOW = window.innerHeight - r.bottom;
+    const SPACE_ABOVE = r.top;
+    const dropUp = SPACE_BELOW < 200 && SPACE_ABOVE > SPACE_BELOW;
+    setPos({
+      left: r.left, top: dropUp ? r.top : r.bottom,
+      width: r.width,
+      maxHeight: Math.max(160, Math.min(PANEL_MAX, dropUp ? SPACE_ABOVE - 16 : SPACE_BELOW - 16)),
+      dropUp,
+    });
+  }, []);
+
+  // Close on outside click / scroll / resize
+  React.useEffect(() => {
+    if (!open) return;
+    computePos();
+    const onDoc = (e) => {
+      if (triggerRef.current && triggerRef.current.contains(e.target)) return;
+      if (panelRef.current && panelRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    const onScroll = () => computePos();
+    const onResize = () => computePos();
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('touchstart', onDoc);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('touchstart', onDoc);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [open, computePos]);
+
+  React.useEffect(() => {
+    if (!open) { setFocusIdx(-1); return; }
+    const idx = norm.findIndex(o => String(o.value) === String(value));
+    setFocusIdx(idx >= 0 ? idx : 0);
+  }, [open, value, norm]);
+
+  const onKey = (e) => {
+    if (disabled) return;
+    if (!open && (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown')) {
+      e.preventDefault(); setOpen(true); return;
+    }
+    if (!open) return;
+    if (e.key === 'Escape') { e.preventDefault(); setOpen(false); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setFocusIdx(i => Math.min(norm.length - 1, i + 1)); return; }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); setFocusIdx(i => Math.max(0, i - 1)); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (focusIdx >= 0 && focusIdx < norm.length) {
+        onChange(norm[focusIdx].value); setOpen(false);
+      }
+    }
+  };
+
+  const panel = (open && pos) ? (
+    <div
+      ref={panelRef}
+      role="listbox"
+      style={{
+        position: 'fixed',
+        left: pos.left,
+        ...(pos.dropUp
+          ? { bottom: window.innerHeight - pos.top + 6 }
+          : { top: pos.top + 6 }),
+        width: pos.width,
+        background: theme.bgElev,
+        border: `1px solid ${theme.rule}`,
+        borderRadius: 12,
+        boxShadow: '0 16px 40px rgba(0,0,0,0.22), 0 4px 8px rgba(0,0,0,0.1)',
+        padding: 4,
+        maxHeight: pos.maxHeight, overflowY: 'auto',
+        zIndex: 9999,
+        animation: 'modalIn 0.18s ease',
+        WebkitOverflowScrolling: 'touch',
+      }}
     >
-      <select
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value)}
+      {norm.length === 0 && (
+        <div style={{ padding: '12px 14px', fontSize: 14, color: theme.inkMuted }}>No options</div>
+      )}
+      {norm.map((o, i) => {
+        const isSelected = String(o.value) === String(value);
+        const isFocused = i === focusIdx;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="option"
+            aria-selected={isSelected}
+            onMouseEnter={() => setFocusIdx(i)}
+            onClick={() => { onChange(o.value); setOpen(false); }}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+              width: '100%', padding: '11px 12px',
+              background: isFocused ? theme.accent + '20' : 'transparent',
+              border: 'none', borderRadius: 8,
+              color: theme.ink,
+              fontSize: 15, fontWeight: isSelected ? 700 : 500,
+              fontFamily: 'inherit', cursor: 'pointer',
+              textAlign: 'left',
+              WebkitTapHighlightColor: 'transparent',
+              transition: 'background 0.1s ease',
+            }}
+          >
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+            {isSelected && (
+              <span style={{ color: theme.accent, display: 'inline-flex' }}>
+                <Icon name="check" size={16} stroke={2.4}/>
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen(o => !o)}
+        onKeyDown={onKey}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="cabt-btn-press"
         style={{
-          flex: 1, height: '100%', border: 'none', background: 'transparent',
-          fontSize: 16, color: theme.ink, outline: 'none', fontFamily: 'inherit',
-          appearance: 'none', WebkitAppearance: 'none',
+          display: 'flex', alignItems: 'center', gap: 8,
+          width: '100%', height: 48,
+          background: theme.bgElev,
+          border: `1px solid ${open ? theme.accent : theme.rule}`,
+          borderRadius: 12, padding: '0 14px',
+          transition: 'border-color 0.18s ease, box-shadow 0.18s ease',
+          boxShadow: open ? `0 0 0 3px ${theme.accent}33` : 'none',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          opacity: disabled ? 0.5 : 1,
+          fontFamily: 'inherit', fontSize: 16,
+          color: hasValue ? theme.ink : theme.inkMuted,
+          textAlign: 'left',
+          WebkitTapHighlightColor: 'transparent',
         }}
       >
-        <option value="" disabled>{placeholder}</option>
-        {options.map(o => (
-          <option key={typeof o === 'object' ? o.value : o} value={typeof o === 'object' ? o.value : o}>
-            {typeof o === 'object' ? o.label : o}
-          </option>
-        ))}
-      </select>
-      <Icon name="chev-d" size={16} color={theme.inkMuted} />
-    </div>
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {displayLabel}
+        </span>
+        <span style={{
+          display: 'inline-flex',
+          transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+          transition: 'transform 0.18s ease',
+          color: theme.inkMuted,
+        }}>
+          <Icon name="chev-d" size={16}/>
+        </span>
+      </button>
+      {/* Render panel via portal so it escapes any parent with overflow: hidden */}
+      {panel && typeof document !== 'undefined' && ReactDOM.createPortal(panel, document.body)}
+    </>
   );
 }
 
