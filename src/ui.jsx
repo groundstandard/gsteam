@@ -93,6 +93,26 @@ const Icon = ({ name, size = 18, color = 'currentColor', stroke = 1.7 }) => {
     case 'doc':        return <svg {...p}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>;
     case 'sun':        return <svg {...p}><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>;
     case 'moon':       return <svg {...p}><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>;
+
+    // ── Premium nav icons (gsTeam custom set) ─────────────────────────────
+    // Unique to the floating tab bar; designed to feel editorial + modern,
+    // with a small accent dot on each so they read as a family.
+    case 'nav-today':
+      // Sunrise wave + gold dot accent — represents "today's prompts" / fresh start
+      return <svg {...p}><path d="M3 18h18"/><path d="M5 14a7 7 0 0114 0"/><path d="M12 4v3"/><path d="M5.5 7.5l1.5 1.5M18.5 7.5L17 9"/><circle cx="12" cy="14" r="0.6" fill={color} stroke="none"/></svg>;
+    case 'nav-accounts':
+      // Storefront silhouette — the clients are gyms/studios. Awning + door.
+      return <svg {...p}><path d="M3 9l2-4h14l2 4"/><path d="M4 9v11h16V9"/><path d="M10 20v-6h4v6"/><path d="M3 9h18"/></svg>;
+    case 'nav-log':
+      // Plus sign with subtle inner ring — "create" affordance
+      return <svg {...p}><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>;
+    case 'nav-score':
+      // Bar chart with rising trend arrow — represents the scorecard
+      return <svg {...p}><path d="M4 20V11M10 20V7M16 20v-4M22 20H2"/><path d="M4 7l6-3 6 5 6-4"/></svg>;
+    case 'nav-me':
+      // Avatar circle with ring — refined profile glyph
+      return <svg {...p}><circle cx="12" cy="9" r="3.5"/><path d="M5 20a7 7 0 0114 0"/><circle cx="12" cy="12" r="10"/></svg>;
+
     default: return null;
   }
 };

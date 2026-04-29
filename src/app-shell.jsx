@@ -290,27 +290,30 @@ function App() {
   };
 
   // Tab bar
+  // Tabs use the gsTeam custom nav-* icon set (defined in ui.jsx). They
+  // share a consistent style — line stroke, optional accent dot — so the
+  // bar reads as a single family.
   const tabs = role === 'CA'
     ? [
-        { name: 'home', icon: 'home', label: 'Today' },
-        { name: 'book', icon: 'book', label: 'Accounts' },
-        { name: 'log-picker', icon: 'plus', label: 'Log', primary: true },
-        { name: 'scorecard', icon: 'chart', label: 'Score' },
-        { name: 'profile', icon: 'user', label: 'Me' },
+        { name: 'home', icon: 'nav-today', label: 'Today' },
+        { name: 'book', icon: 'nav-accounts', label: 'Accounts' },
+        { name: 'log-picker', icon: 'nav-log', label: 'Log', primary: true },
+        { name: 'scorecard', icon: 'nav-score', label: 'Score' },
+        { name: 'profile', icon: 'nav-me', label: 'Me' },
       ]
     : role === 'Sales'
     ? [
-        { name: 'home', icon: 'home', label: 'Home' },
+        { name: 'home', icon: 'nav-today', label: 'Home' },
         { name: 'commissions', icon: 'cash', label: 'Commissions' },
-        { name: 'log-contract', icon: 'plus', label: 'Contract', primary: true },
+        { name: 'log-contract', icon: 'nav-log', label: 'Contract', primary: true },
         { name: 'log-adjustment', icon: 'edit', label: 'Adjust' },
       ]
     : [
-        { name: 'home',    icon: 'shield', label: 'Approvals' },
-        { name: 'bonus',   icon: 'cash',   label: 'Bonus' },
-        { name: 'revenue', icon: 'chart',  label: 'Revenue' },
-        { name: 'clients', icon: 'book',   label: 'Clients' },
-        { name: 'more',    icon: 'cog',    label: 'More' },
+        { name: 'home',    icon: 'shield',     label: 'Approvals' },
+        { name: 'bonus',   icon: 'cash',       label: 'Bonus' },
+        { name: 'revenue', icon: 'nav-score',  label: 'Revenue' },
+        { name: 'clients', icon: 'nav-accounts', label: 'Clients' },
+        { name: 'more',    icon: 'cog',        label: 'More' },
       ];
 
   // App body — used both inside and outside the iPhone frame
@@ -451,14 +454,10 @@ function App() {
         </div>
       </div>
 
-      {/* Floating island tab bar.
-         - In iOS frame mode (desktop preview): position absolute so it stays
-           inside the simulated iPhone frame.
-         - In standalone PWA / mobile / desktop fullbleed: position fixed so
-           it's glued to the viewport bottom regardless of layout height
-           quirks (iOS Safari sometimes makes 100vh exceed visible area).
-         - bottom uses env(safe-area-inset-bottom) to lift above the iPhone
-           home indicator. */}
+      {/* Premium floating island tab bar.
+         Glassmorphism: layered semi-transparent bg + heavy backdrop blur.
+         Inner highlight at top + drop shadow + accent-tinted glow.
+         Position fixed on real mobile / desktop, absolute inside iOS frame. */}
       <div style={{
         position: isPhone ? 'absolute' : 'fixed',
         ...(!isPhone && role === 'Admin' && vw >= 1100
@@ -466,13 +465,18 @@ function App() {
           : { left: 12, right: 12 }),
         bottom: 'calc(env(safe-area-inset-bottom, 0px) + 14px)',
         display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-        background: theme.bgElev,
-        border: `1px solid ${theme.rule}`,
+        // Layered glass: theme bg at 78% opacity + saturate-blur for depth
+        background: t.theme === 'athletic'
+          ? 'linear-gradient(180deg, rgba(28,32,42,0.92), rgba(20,24,32,0.88))'
+          : 'linear-gradient(180deg, rgba(255,255,255,0.94), rgba(248,246,238,0.88))',
+        border: `1px solid ${t.theme === 'athletic' ? 'rgba(255,255,255,0.06)' : 'rgba(14,26,53,0.06)'}`,
         borderRadius: 999,
         padding: '8px 10px',
-        boxShadow: '0 10px 30px rgba(0,0,0,0.22), 0 2px 6px rgba(0,0,0,0.08)',
-        backdropFilter: 'saturate(140%) blur(12px)',
-        WebkitBackdropFilter: 'saturate(140%) blur(12px)',
+        boxShadow: t.theme === 'athletic'
+          ? '0 18px 48px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.06)'
+          : '0 18px 48px rgba(14,26,53,0.18), 0 2px 6px rgba(14,26,53,0.08), inset 0 1px 0 rgba(255,255,255,0.7)',
+        backdropFilter: 'saturate(180%) blur(20px)',
+        WebkitBackdropFilter: 'saturate(180%) blur(20px)',
         zIndex: 100,
       }}>
         {tabs.map(tb => {
@@ -501,51 +505,56 @@ function App() {
                 touchAction: 'manipulation',
               }}
             >
-              {/* Animated pill highlight behind active non-primary tab */}
+              {/* Animated gradient pill highlight behind active non-primary tab */}
               {active && !tb.primary && (
                 <span aria-hidden="true" style={{
                   position: 'absolute', inset: '4px 6px',
-                  background: theme.accent + '1A',
+                  background: `linear-gradient(180deg, ${theme.accent}28, ${theme.accent}14)`,
                   borderRadius: 14, zIndex: 0,
-                  animation: 'tabPillIn 0.22s ease',
+                  animation: 'tabPillIn 0.24s cubic-bezier(0.16, 1, 0.3, 1)',
+                  boxShadow: `inset 0 1px 0 ${theme.accent}33`,
                 }}/>
               )}
-              {/* Tiny accent dot indicator above active label */}
+              {/* Tiny gold accent bar indicator above active label */}
               {active && !tb.primary && (
                 <span aria-hidden="true" style={{
-                  position: 'absolute', top: 3, left: '50%', transform: 'translateX(-50%)',
-                  width: 4, height: 4, borderRadius: '50%',
+                  position: 'absolute', top: 2, left: '50%', transform: 'translateX(-50%)',
+                  width: 16, height: 2.5, borderRadius: 2,
                   background: theme.accent,
+                  boxShadow: `0 0 8px ${theme.accent}99`,
                   zIndex: 2,
+                  animation: 'tabPillIn 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
                 }}/>
               )}
               {tb.primary ? (
                 <div style={{
-                  width: 44, height: 44, borderRadius: 22,
-                  background: theme.accent, color: theme.accentInk,
+                  width: 46, height: 46, borderRadius: 23,
+                  background: `linear-gradient(180deg, ${theme.accent} 0%, ${theme.accent}E0 100%)`,
+                  color: theme.accentInk,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: 2,
                   boxShadow: active
-                    ? '0 6px 18px ' + theme.accent + '66, 0 2px 4px rgba(0,0,0,0.18)'
-                    : '0 4px 12px rgba(0,0,0,0.2)',
-                  transform: active ? 'translateY(-2px)' : 'translateY(0)',
-                  transition: 'transform 0.18s ease, box-shadow 0.18s ease',
+                    ? `0 8px 22px ${theme.accent}77, 0 2px 4px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.35)`
+                    : `0 6px 16px ${theme.accent}55, 0 2px 4px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.3)`,
+                  transform: active ? 'translateY(-3px) scale(1.04)' : 'translateY(-1px) scale(1)',
+                  transition: 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease',
                   position: 'relative', zIndex: 1,
-                }}><Icon name={tb.icon} size={22} stroke={2.2}/></div>
+                }}><Icon name={tb.icon} size={22} stroke={2.4}/></div>
               ) : (
                 <span style={{
                   position: 'relative', zIndex: 1,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   transform: active ? 'translateY(-1px)' : 'translateY(0)',
-                  transition: 'transform 0.18s ease',
+                  transition: 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+                  filter: active ? `drop-shadow(0 0 6px ${theme.accent}55)` : 'none',
                 }}>
-                  <Icon name={tb.icon} size={22} stroke={active ? 2.2 : 1.9}/>
+                  <Icon name={tb.icon} size={22} stroke={active ? 2.2 : 1.85}/>
                 </span>
               )}
               <span style={{
                 position: 'relative', zIndex: 1,
-                fontSize: 10, fontWeight: active ? 700 : 600, letterSpacing: 0.2,
-                transition: 'font-weight 0.15s ease',
+                fontSize: 10.5, fontWeight: active ? 700 : 600, letterSpacing: 0.2,
+                transition: 'font-weight 0.15s ease, color 0.18s ease',
               }}>{tb.label}</span>
             </button>
           );
