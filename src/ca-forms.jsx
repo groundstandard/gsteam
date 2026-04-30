@@ -1,5 +1,42 @@
 // ca-forms.jsx — Log Monthly Metrics, Log Growth Event, Log Survey
 
+// Defined at module scope so parent re-renders don't recreate the component
+// reference. If declared inside LogMetricsForm, every keystroke remounts the
+// whole section + Inputs lose focus mid-typing.
+function SectionCard({ id, title, doneLabel, children, theme, isOpen, done, onToggle }) {
+  return (
+    <Card theme={theme} padding={0}>
+      <button
+        onClick={() => onToggle(id)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '14px 16px', width: '100%', background: 'transparent', border: 'none',
+          cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+        }}
+      >
+        <div style={{
+          width: 22, height: 22, borderRadius: 11,
+          background: done ? STATUS.green : 'transparent',
+          border: `1.5px solid ${done ? STATUS.green : theme.rule}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          {done && <Icon name="check" size={13} color="#fff" stroke={2.5}/>}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: theme.ink, letterSpacing: -0.15 }}>{title}</div>
+          {!isOpen && doneLabel && <div style={{ fontSize: 12, color: theme.inkMuted, marginTop: 2 }}>{doneLabel}</div>}
+        </div>
+        <Icon name={isOpen ? 'chev-u' : 'chev-d'} size={18} color={theme.inkMuted} />
+      </button>
+      {isOpen && (
+        <div style={{ padding: '4px 16px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {children}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ── Smart-card form for Monthly Metrics ────────────────────────────────────
 function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, editingId }) {
   const myClients = state.clients.filter(c => c.assignedCA === ca.id && !c.cancelDate);
@@ -27,7 +64,7 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
     apptsBooked: '',
     leadsShowed: '',
     leadsSigned: '',
-    priorStudents: lastForInit?.priorStudents ?? '',
+    totalStudentsStart: lastForInit?.totalStudentsStart ?? '',
     studentsCancelled: '',
     notes: '',
   });
@@ -48,7 +85,7 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
           next.leadCost = next.leadCost || last.leadCost;
           next.adSpend = next.adSpend || last.adSpend;
           next.clientGrossRevenue = next.clientGrossRevenue || last.clientGrossRevenue;
-          next.priorStudents = next.priorStudents || last.priorStudents;
+          next.totalStudentsStart = next.totalStudentsStart || last.totalStudentsStart;
         }
       }
       return next;
@@ -108,7 +145,7 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
       apptsBooked: num(form.apptsBooked),
       leadsShowed: num(form.leadsShowed),
       leadsSigned: num(form.leadsSigned),
-      priorStudents: num(form.priorStudents),
+      totalStudentsStart: num(form.totalStudentsStart),
       studentsCancelled: num(form.studentsCancelled),
       notes: form.notes || '',
     };
@@ -120,7 +157,7 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
     ident: !!form.clientId && !!form.month,
     money: form.clientMRR !== '' && form.adSpend !== '' && form.clientGrossRevenue !== '',
     funnel: ['leadsGenerated','apptsBooked','leadsShowed','leadsSigned'].every(k => form[k] !== ''),
-    attrition: form.priorStudents !== '' && form.studentsCancelled !== '',
+    attrition: form.totalStudentsStart !== '' && form.studentsCancelled !== '',
   };
 
   if (duplicateBlock) {
@@ -141,41 +178,10 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
     );
   }
 
-  const SectionCard = ({ id, title, doneLabel, children }) => {
-    const isOpen = open[id];
-    const done = sectionDone[id];
-    return (
-      <Card theme={theme} padding={0}>
-        <button
-          onClick={() => setOpen(o => ({ ...o, [id]: !o[id] }))}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: '14px 16px', width: '100%', background: 'transparent', border: 'none',
-            cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
-          }}
-        >
-          <div style={{
-            width: 22, height: 22, borderRadius: 11,
-            background: done ? STATUS.green : 'transparent',
-            border: `1.5px solid ${done ? STATUS.green : theme.rule}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}>
-            {done && <Icon name="check" size={13} color="#fff" stroke={2.5}/>}
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: theme.ink, letterSpacing: -0.15 }}>{title}</div>
-            {!isOpen && doneLabel && <div style={{ fontSize: 12, color: theme.inkMuted, marginTop: 2 }}>{doneLabel}</div>}
-          </div>
-          <Icon name={isOpen ? 'chev-u' : 'chev-d'} size={18} color={theme.inkMuted} />
-        </button>
-        {isOpen && (
-          <div style={{ padding: '4px 16px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {children}
-          </div>
-        )}
-      </Card>
-    );
-  };
+  const toggleSection = React.useCallback((id) => setOpen(o => ({ ...o, [id]: !o[id] })), []);
+  const sectionProps = (id) => ({
+    id, theme, isOpen: open[id], done: sectionDone[id], onToggle: toggleSection,
+  });
 
   return (
     <FormShell theme={theme} gap={12}>
@@ -183,7 +189,7 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
         Prefilled from last month where possible. Tap a section to edit.
       </div>
 
-      <SectionCard id="ident" title="Client & month"
+      <SectionCard {...sectionProps('ident')} title="Client & month"
         doneLabel={form.clientId && form.month ? `${state.clients.find(c => c.id === form.clientId)?.name} · ${CABT_fmtMonth(form.month)}` : 'Required'}>
         <Field label="Client" required error={errors.clientId} theme={theme}>
           <Select
@@ -198,9 +204,9 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
         </Field>
       </SectionCard>
 
-      <SectionCard id="money" title="Revenue & spend"
+      <SectionCard {...sectionProps('money')} title="Revenue & spend"
         doneLabel={sectionDone.money ? `MRR ${CABT_fmtMoney(form.clientMRR)} · Ad ${CABT_fmtMoney(form.adSpend)}` : 'Tap to fill'}>
-        <Field label="Client MRR" required error={errors.clientMRR} theme={theme}>
+        <Field label="Client MRR" hint="Recurring monthly subscription only (Stripe MRR). Excludes setup, one-time, add-ons." required error={errors.clientMRR} theme={theme}>
           <Input type="number" inputmode="decimal" prefix="$" value={form.clientMRR} onChange={(v) => updateForm('clientMRR', v)} theme={theme} />
         </Field>
         <Field label="Lead cost" theme={theme}>
@@ -209,12 +215,12 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
         <Field label="Ad spend" theme={theme}>
           <Input type="number" inputmode="decimal" prefix="$" value={form.adSpend} onChange={(v) => updateForm('adSpend', v)} theme={theme} />
         </Field>
-        <Field label="Client gross revenue" hint="Used for ad spend target calc" theme={theme}>
+        <Field label="Client gross revenue" hint="Total monthly billings INCLUDING setup, one-time fees, and add-ons. Drives ad-spend efficiency calc. May equal MRR for clients with no one-time charges." theme={theme}>
           <Input type="number" inputmode="decimal" prefix="$" value={form.clientGrossRevenue} onChange={(v) => updateForm('clientGrossRevenue', v)} theme={theme} />
         </Field>
       </SectionCard>
 
-      <SectionCard id="funnel" title="Funnel counts"
+      <SectionCard {...sectionProps('funnel')} title="Funnel counts"
         doneLabel={sectionDone.funnel ? `${form.leadsGenerated} → ${form.apptsBooked} → ${form.leadsShowed} → ${form.leadsSigned}` : 'Tap to fill'}>
         <Field label="Leads generated" hint={warnings.leadsGenerated} theme={theme}>
           <Input type="number" inputmode="numeric" value={form.leadsGenerated} onChange={(v) => updateForm('leadsGenerated', v)} theme={theme} />
@@ -230,17 +236,17 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
         </Field>
       </SectionCard>
 
-      <SectionCard id="attrition" title="Attrition"
-        doneLabel={sectionDone.attrition ? `${form.studentsCancelled} of ${form.priorStudents} cancelled` : 'Tap to fill'}>
-        <Field label="Prior students" theme={theme}>
-          <Input type="number" inputmode="numeric" value={form.priorStudents} onChange={(v) => updateForm('priorStudents', v)} theme={theme} />
+      <SectionCard {...sectionProps('attrition')} title="Attrition"
+        doneLabel={sectionDone.attrition ? `${form.studentsCancelled} of ${form.totalStudentsStart} cancelled` : 'Tap to fill'}>
+        <Field label="Total Students (Start)" hint="Total student count at start of the month. Used as attrition denominator." theme={theme}>
+          <Input type="number" inputmode="numeric" value={form.totalStudentsStart} onChange={(v) => updateForm('totalStudentsStart', v)} theme={theme} />
         </Field>
         <Field label="Students cancelled" theme={theme}>
           <Input type="number" inputmode="numeric" value={form.studentsCancelled} onChange={(v) => updateForm('studentsCancelled', v)} theme={theme} />
         </Field>
       </SectionCard>
 
-      <SectionCard id="notes" title="Notes (optional)"
+      <SectionCard {...sectionProps('notes')} title="Notes (optional)"
         doneLabel={form.notes ? form.notes.slice(0, 50) + (form.notes.length > 50 ? '…' : '') : 'No notes'}>
         <textarea
           value={form.notes}

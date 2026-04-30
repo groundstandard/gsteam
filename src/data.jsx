@@ -67,8 +67,8 @@ function genMonthlyMetrics() {
       const apptsBooked = Math.floor(leads * (0.32 + Math.random() * 0.25));
       const leadsShowed = Math.floor(apptsBooked * (0.55 + Math.random() * 0.25));
       const leadsSigned = Math.floor(leadsShowed * (0.55 + Math.random() * 0.30));
-      const priorStudents = 80 + Math.floor(Math.random() * 60);
-      const studentsCancelled = Math.floor(priorStudents * (0.02 + Math.random() * 0.05));
+      const totalStudentsStart = 80 + Math.floor(Math.random() * 60);
+      const studentsCancelled = Math.floor(totalStudentsStart * (0.02 + Math.random() * 0.05));
       rows.push({
         id: `MM-${String(id++).padStart(4, '0')}`,
         clientId: c.id,
@@ -81,7 +81,7 @@ function genMonthlyMetrics() {
         apptsBooked,
         leadsShowed,
         leadsSigned,
-        priorStudents,
+        totalStudentsStart,
         studentsCancelled,
         notes: '',
       });

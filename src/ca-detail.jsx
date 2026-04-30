@@ -110,7 +110,7 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
                 <Stat theme={theme} k="Signed" v={m.leadsSigned} />
                 <Stat theme={theme} k="Ad spend" v={CABT_fmtMoney(m.adSpend)} />
                 <Stat theme={theme} k="Lead $" v={CABT_fmtMoney(m.leadCost)} />
-                <Stat theme={theme} k="Gross" v={CABT_fmtMoney(m.clientGrossRevenue)} />
+                <Stat theme={theme} k="Gross rev" v={CABT_fmtMoney(m.clientGrossRevenue)} />
                 <Stat theme={theme} k="Cancel" v={m.studentsCancelled} />
               </div>
             </Card>

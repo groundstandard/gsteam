@@ -78,7 +78,9 @@ function clientSubScores(client, metrics, surveys, config) {
   const revenue = clamp(avgMRR / Math.max(_n(client.monthlyRetainer), 1), 0, 1.2);
 
   // Ad Efficiency: spent within target band of gross revenue.
-  // Some live rows lack clientGrossRevenue; fall back to MRR as proxy.
+  // Per TICKET-4 (2026-04-30): clientGrossRevenue is now a real column with
+  // default 0; we still fall back to clientMRR for legacy rows that have
+  // gross_revenue == 0 (no one-time charges, gross == MRR for that month).
   const adRatios = recent.map(m => {
     const gross = _n(m.clientGrossRevenue) || _n(m.clientMRR);
     return _n(m.adSpend) / Math.max(gross, 1);
@@ -102,7 +104,7 @@ function clientSubScores(client, metrics, surveys, config) {
   const funnel = fScores.reduce((a, b) => a + b, 0) / fScores.length;
 
   // Attrition: monthly cancel rate
-  const attRates = recent.map(m => _n(m.studentsCancelled) / Math.max(_n(m.priorStudents), 1));
+  const attRates = recent.map(m => _n(m.studentsCancelled) / Math.max(_n(m.totalStudentsStart), 1));
   const avgAtt = attRates.reduce((a, b) => a + b, 0) / attRates.length;
   const greenFloor = _n(cfg.attritionGreenFloor, 0.85);
   const criticalCeil = _n(cfg.attritionCriticalCeiling, 0.70);

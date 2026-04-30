@@ -15,33 +15,62 @@ function quartersOfYear(year) {
   ];
 }
 
+// Classify a quarter against "today" so the bonus surface never shows numeric
+// payouts for quarters that haven't happened yet (TICKET-1, 2026-04-30 brief).
+function quarterStatus(qStart, qEnd, today = new Date()) {
+  const start = new Date(qStart + 'T00:00:00');
+  const end = new Date(qEnd + 'T23:59:59');
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 'current';
+  if (today < start) return 'future';
+  if (today > end) return 'past';
+  return 'current';
+}
+
 // Synthesize a per-quarter composite for a CA from their existing book.
 // Demo math: vary the live composite slightly per quarter so the table tells a story.
-function caQuarterComposite(ca, state, qStart, qEnd) {
+// Returns null payout/composite for future quarters — data does not exist yet.
+function caQuarterComposite(ca, state, qStart, qEnd, status) {
+  if (status === 'future') return { composite: null, payout: null, status };
   const qConfig = { ...state.config, quarterStart: qStart, quarterEnd: qEnd };
   const score = CABT_caScorecard(ca, { ...state, config: qConfig });
   // Add small deterministic variation per quarter so historical quarters differ.
   const seed = (ca.id + qStart).split('').reduce((s, c) => s + c.charCodeAt(0), 0);
   const wobble = ((seed % 17) - 8) / 100; // -0.08..+0.08
   const composite = CABT_clamp((score.composite || 0) + wobble, 0, 1);
-  return { composite, payout: Math.round(composite * 7500) };
+  return { composite, payout: Math.round(composite * 7500), status };
 }
 
 // ── Annual Bonus ───────────────────────────────────────────────────────────
 function AdminAnnualBonus({ state, theme }) {
-  const year = new Date(state.config.quarterStart).getFullYear();
-  const qs = quartersOfYear(year);
+  const today = new Date();
+  // Config from Supabase may be empty {} or use snake_case keys; fall back to today's year.
+  const cfgYear = new Date(state.config?.quarterStart || state.config?.quarter_start || '').getFullYear();
+  const year = Number.isFinite(cfgYear) ? cfgYear : today.getFullYear();
+  const qs = quartersOfYear(year).map(q => ({ ...q, status: quarterStatus(q.start, q.end, today) }));
+
+  // Viewport-aware layout: desktop = table, mobile = card grid.
+  const [vw, setVw] = React.useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+  React.useEffect(() => {
+    const onR = () => setVw(window.innerWidth);
+    window.addEventListener('resize', onR);
+    return () => window.removeEventListener('resize', onR);
+  }, []);
+  const isDesktop = vw >= 900;
   const cas = state.cas.filter(c => c.active);
 
   const rows = cas.map(ca => {
-    const qScores = qs.map(q => caQuarterComposite(ca, state, q.start, q.end));
-    const annualPayout = qScores.reduce((s, q) => s + q.payout, 0);
-    const avgComposite = qScores.reduce((s, q) => s + q.composite, 0) / qs.length;
+    const qScores = qs.map(q => caQuarterComposite(ca, state, q.start, q.end, q.status));
+    const realized = qScores.filter(q => q.payout !== null);
+    const annualPayout = realized.reduce((s, q) => s + q.payout, 0);
+    const avgComposite = realized.length
+      ? realized.reduce((s, q) => s + q.composite, 0) / realized.length
+      : 0;
     return { ca, qScores, annualPayout, avgComposite };
   });
 
   const totalAnnual = rows.reduce((s, r) => s + r.annualPayout, 0);
   const avgComposite = rows.reduce((s, r) => s + r.avgComposite, 0) / Math.max(rows.length, 1);
+  const hasFuture = qs.some(q => q.status === 'future');
 
   return (
     <div style={{ padding: '8px 16px 100px', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -55,48 +84,129 @@ function AdminAnnualBonus({ state, theme }) {
         </div>
         <div style={{ marginTop: 10, fontSize: 12, color: theme.inkSoft }}>
           Avg composite <strong style={{ color: theme.ink }}>{(avgComposite*100).toFixed(0)}/100</strong>
+          {hasFuture && <span style={{ marginLeft: 8, color: theme.inkMuted }}>· future quarters excluded until they begin</span>}
         </div>
       </Card>
 
-      <Card theme={theme} padding={0}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr repeat(4, 1fr) 1.1fr', alignItems: 'center', padding: '10px 12px', borderBottom: `1px solid ${theme.rule}`, fontSize: 10, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.4, textTransform: 'uppercase' }}>
-          <div>CA</div>
-          {qs.map(q => <div key={q.key} style={{ textAlign: 'center' }}>{q.label.split(' ')[0]}</div>)}
-          <div style={{ textAlign: 'right' }}>FY total</div>
-        </div>
-        {rows.map((r, i) => (
-          <div key={r.ca.id} style={{
-            display: 'grid', gridTemplateColumns: '1.4fr repeat(4, 1fr) 1.1fr',
-            alignItems: 'center', padding: '12px',
-            borderBottom: i === rows.length - 1 ? 'none' : `1px solid ${theme.rule}`,
-            fontSize: 13,
-          }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 600, color: theme.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ca.name}</div>
-              <div style={{ fontSize: 11, color: theme.inkMuted }}>{r.ca.id}</div>
-            </div>
-            {r.qScores.map((q, qi) => {
-              const s = CABT_scoreToStatus(q.composite);
-              return (
-                <div key={qi} style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: STATUS[s], fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
-                    {(q.composite*100).toFixed(0)}
+      {isDesktop ? (
+        // ── Desktop: table layout (Bobby's preference) ───────────────────
+        <Card theme={theme} padding={0}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr repeat(4, 1fr) 1.1fr', alignItems: 'center', padding: '12px 16px', borderBottom: `1px solid ${theme.rule}`, fontSize: 10, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+            <div>CA</div>
+            {qs.map(q => (
+              <div key={q.key} style={{ textAlign: 'center', color: q.status === 'current' ? theme.ink : theme.inkMuted, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <span>{q.label.split(' ')[0]}</span>
+                {q.status === 'current' && (
+                  <span style={{ fontSize: 8, fontWeight: 800, color: theme.bg || '#0B0E14', background: theme.accent || '#D7FF3D', padding: '2px 5px', borderRadius: 3, letterSpacing: 0.5 }}>LIVE</span>
+                )}
+              </div>
+            ))}
+            <div style={{ textAlign: 'right' }}>FY total</div>
+          </div>
+          {rows.map((r, i) => (
+            <div key={r.ca.id} style={{
+              display: 'grid', gridTemplateColumns: '1.5fr repeat(4, 1fr) 1.1fr',
+              alignItems: 'center', padding: '14px 16px',
+              borderBottom: i === rows.length - 1 ? 'none' : `1px solid ${theme.rule}`,
+              fontSize: 13, minHeight: 60,
+            }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, color: theme.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ca.name}</div>
+                <div style={{ fontSize: 11, color: theme.inkMuted, marginTop: 2 }}>{r.ca.id}</div>
+              </div>
+              {r.qScores.map((q, qi) => {
+                if (q.status === 'future') {
+                  return (
+                    <div key={qi} style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }} title="Not yet available — quarter has not started">
+                      <div style={{ fontSize: 18, fontWeight: 500, color: theme.inkMuted, lineHeight: 1, opacity: 0.4 }}>—</div>
+                    </div>
+                  );
+                }
+                const s = CABT_scoreToStatus(q.composite);
+                const isCurrent = q.status === 'current';
+                return (
+                  <div key={qi} style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }} title={isCurrent ? 'Pace-to-date — quarter still in progress' : undefined}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: STATUS[s], fontVariantNumeric: 'tabular-nums', lineHeight: 1, fontStyle: isCurrent ? 'italic' : 'normal' }}>
+                      {(q.composite*100).toFixed(0)}
+                    </div>
+                    <div style={{ fontSize: 10, color: theme.inkMuted, fontVariantNumeric: 'tabular-nums', fontStyle: isCurrent ? 'italic' : 'normal', whiteSpace: 'nowrap' }}>
+                      {CABT_fmtMoney(q.payout)}{isCurrent ? ' pace' : ''}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 10, color: theme.inkMuted, fontVariantNumeric: 'tabular-nums', marginTop: 1 }}>
-                    {CABT_fmtMoney(q.payout)}
+                );
+              })}
+              <div style={{ textAlign: 'right', fontWeight: 700, color: theme.ink, fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
+                {CABT_fmtMoney(r.annualPayout)}
+              </div>
+            </div>
+          ))}
+        </Card>
+      ) : (
+        // ── Mobile: per-CA card layout ───────────────────────────────────
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
+          {rows.map(r => (
+            <Card key={r.ca.id} theme={theme} padding={16}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontWeight: 700, color: theme.ink, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ca.name}</div>
+                  <div style={{ fontSize: 11, color: theme.inkMuted, letterSpacing: 0.3, marginTop: 2 }}>{r.ca.id}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 9, color: theme.inkMuted, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase' }}>FY total</div>
+                  <div style={{ fontFamily: theme.serif, fontSize: 22, fontWeight: 600, color: theme.ink, fontVariantNumeric: 'tabular-nums', letterSpacing: -0.4, lineHeight: 1, marginTop: 2 }}>
+                    {CABT_fmtMoney(r.annualPayout)}
                   </div>
                 </div>
-              );
-            })}
-            <div style={{ textAlign: 'right', fontWeight: 700, color: theme.ink, fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
-              {CABT_fmtMoney(r.annualPayout)}
-            </div>
-          </div>
-        ))}
-      </Card>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                {r.qScores.map((q, qi) => {
+                  const qLabel = qs[qi].label.split(' ')[0];
+                  if (q.status === 'future') {
+                    return (
+                      <div key={qi} style={{
+                        borderRadius: 8, padding: '10px 4px', textAlign: 'center',
+                        background: theme.bgSoft || 'rgba(255,255,255,0.03)',
+                        border: `1px dashed ${theme.rule}`,
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 64,
+                      }} title="Not yet available — quarter has not started">
+                        <div style={{ fontSize: 9, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.5 }}>{qLabel}</div>
+                        <div style={{ fontSize: 18, color: theme.inkMuted, opacity: 0.4, lineHeight: 1 }}>—</div>
+                      </div>
+                    );
+                  }
+                  const s = CABT_scoreToStatus(q.composite);
+                  const isCurrent = q.status === 'current';
+                  return (
+                    <div key={qi} style={{
+                      borderRadius: 8, padding: '10px 4px', textAlign: 'center',
+                      background: isCurrent ? (theme.accentSoft || 'rgba(215,255,61,0.08)') : (theme.bgSoft || 'rgba(255,255,255,0.03)'),
+                      border: isCurrent ? `1px solid ${theme.accent || '#D7FF3D'}` : `1px solid ${theme.rule}`,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 64,
+                    }} title={isCurrent ? 'Pace-to-date — quarter still in progress' : undefined}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.5 }}>{qLabel}</span>
+                        {isCurrent && (
+                          <span style={{ fontSize: 7, fontWeight: 800, color: theme.bg || '#0B0E14', background: theme.accent || '#D7FF3D', padding: '1px 4px', borderRadius: 2, letterSpacing: 0.5 }}>LIVE</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: STATUS[s], fontVariantNumeric: 'tabular-nums', lineHeight: 1, fontStyle: isCurrent ? 'italic' : 'normal' }}>
+                        {(q.composite*100).toFixed(0)}
+                      </div>
+                      <div style={{ fontSize: 9, color: theme.inkMuted, fontVariantNumeric: 'tabular-nums', fontStyle: isCurrent ? 'italic' : 'normal', lineHeight: 1 }}>
+                        {CABT_fmtMoney(q.payout)}{isCurrent ? ' pace' : ''}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <div style={{ fontSize: 12, color: theme.inkMuted, padding: '0 4px', lineHeight: 1.5 }}>
-        Annual payout = sum of quarterly composite × $7,500 cap. Quarterly figures use the same scoring engine the CA sees on their scorecard.
+        Annual payout = sum of <strong>past + current</strong> quarterly composites × $7,500 cap. Quarterly figures use the same scoring engine the CA sees on their scorecard. Current quarter shows pace-to-date (italic). Future quarters render "—" until they begin.
       </div>
     </div>
   );
@@ -336,7 +446,7 @@ function AdminClientCalc({ state, theme, clientId, navigate }) {
     show:    recent.reduce((s, m) => s + (m.leadsShowed / Math.max(m.apptsBooked, 1)), 0) / recent.length,
     close:   recent.reduce((s, m) => s + (m.leadsSigned / Math.max(m.leadsShowed, 1)), 0) / recent.length,
   } : { booking: 0, show: 0, close: 0 };
-  const avgAtt = recent.length ? recent.reduce((s, m) => s + (m.studentsCancelled / Math.max(m.priorStudents, 1)), 0) / recent.length : 0;
+  const avgAtt = recent.length ? recent.reduce((s, m) => s + (m.studentsCancelled / Math.max(m.totalStudentsStart, 1)), 0) / recent.length : 0;
 
   const Row = ({ label, value, target, sub: subline, score, color }) => (
     <div style={{ padding: '12px 0', borderBottom: `1px solid ${theme.rule}` }}>
@@ -434,7 +544,7 @@ function AdminClientCalc({ state, theme, clientId, navigate }) {
                 <span style={{ fontSize: 12, color: theme.inkMuted, fontVariantNumeric: 'tabular-nums' }}>MRR {CABT_fmtMoney(m.clientMRR)}</span>
               </div>
               <div style={{ fontSize: 11, color: theme.inkMuted, fontFamily: theme.mono }}>
-                {m.leadsGenerated}L → {m.apptsBooked}B → {m.leadsShowed}S → {m.leadsSigned}✓ · ad {CABT_fmtMoney(m.adSpend)} · cancel {m.studentsCancelled}/{m.priorStudents}
+                {m.leadsGenerated}L → {m.apptsBooked}B → {m.leadsShowed}S → {m.leadsSigned}✓ · ad {CABT_fmtMoney(m.adSpend)} · cancel {m.studentsCancelled}/{m.totalStudentsStart}
               </div>
             </div>
           ))}

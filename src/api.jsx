@@ -228,7 +228,16 @@ const snakeToCamel = (s) => {
   if (SNAKE_TO_CAMEL_OVERRIDES[s]) return SNAKE_TO_CAMEL_OVERRIDES[s];
   return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 };
-const camelToSnake = (s) => s.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase());
+// Inverse of SNAKE_TO_CAMEL_OVERRIDES — built once so writes round-trip
+// correctly. Without this, e.g. clientMRR would become client_m_r_r and
+// Supabase would reject the insert ("column does not exist").
+const CAMEL_TO_SNAKE_OVERRIDES = Object.fromEntries(
+  Object.entries(SNAKE_TO_CAMEL_OVERRIDES).map(([snake, camel]) => [camel, snake])
+);
+const camelToSnake = (s) => {
+  if (CAMEL_TO_SNAKE_OVERRIDES[s]) return CAMEL_TO_SNAKE_OVERRIDES[s];
+  return s.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase());
+};
 const reshape = (obj, transform) => {
   if (Array.isArray(obj)) return obj.map(o => reshape(o, transform));
   if (obj === null || typeof obj !== 'object') return obj;
