@@ -206,17 +206,9 @@ function LogContractForm({ state, rep, theme, navigate, onSubmit }) {
       <Field label="Relationship Development Rep (booked by)" theme={theme}>
         <Select value={form.sdrBookedBy} onChange={(v) => setForm({ ...form, sdrBookedBy: v })} options={rdrs} theme={theme}/>
       </Field>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-        <Field label="Upfront %" theme={theme}>
-          <Input type="number" inputmode="decimal" suffix="×" value={form.upfrontPct} onChange={(v) => setForm({ ...form, upfrontPct: v })} theme={theme}/>
-        </Field>
-        <Field label="Mid %" theme={theme}>
-          <Input type="number" inputmode="decimal" suffix="×" value={form.midPct} onChange={(v) => setForm({ ...form, midPct: v })} theme={theme}/>
-        </Field>
-        <Field label="End %" theme={theme}>
-          <Input type="number" inputmode="decimal" suffix="×" value={form.endPct} onChange={(v) => setForm({ ...form, endPct: v })} theme={theme}/>
-        </Field>
-      </div>
+      {/* Commission % fields hidden from sales reps (Bobby 2026-05-01).
+          Defaults are auto-applied from the AM's per-rep rates set by admin
+          in Roster. Admin can override per-contract from the client edit. */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0' }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 600, color: theme.ink }}>Membership add-on?</div>

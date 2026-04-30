@@ -427,7 +427,66 @@ function AdminClientRollup({ state, theme, navigate }) {
 }
 
 // ── Per-Client Calc ─────────────────────────────────────────────────────────
-function AdminClientCalc({ state, theme, clientId, navigate, onSetCadence }) {
+// Per-contract commission rate editor (Bobby 2026-05-01 — Item 4).
+// Module-scope so parent re-renders don't remount it (otherwise inputs lose
+// focus mid-typing — same SectionCard pitfall we fixed in TICKET-3 polish).
+function RatesCard({ theme, clientId, initial, rep, onSave }) {
+  const [up, setUp] = React.useState(initial.upfrontPct);
+  const [mid, setMid] = React.useState(initial.midPct);
+  const [end, setEnd] = React.useState(initial.endPct);
+  const [busy, setBusy] = React.useState(false);
+  // Reset draft when admin navigates to a different client
+  React.useEffect(() => {
+    setUp(initial.upfrontPct); setMid(initial.midPct); setEnd(initial.endPct);
+  }, [clientId]);
+
+  const num = (v) => v === '' ? null : Number(v);
+  const dirty = num(up) !== (initial.upfrontPct === '' ? null : Number(initial.upfrontPct))
+             || num(mid) !== (initial.midPct === '' ? null : Number(initial.midPct))
+             || num(end) !== (initial.endPct === '' ? null : Number(initial.endPct));
+
+  const save = async () => {
+    if (!dirty || busy) return;
+    setBusy(true);
+    await onSave({ upfrontPct: num(up), midPct: num(mid), endPct: num(end) });
+    setBusy(false);
+  };
+
+  return (
+    <Card theme={theme} padding={14}>
+      <SectionLabel theme={theme}>Commission rates</SectionLabel>
+      <div style={{ fontSize: 12, color: theme.inkMuted, marginTop: 4, marginBottom: 10, lineHeight: 1.4 }}>
+        {rep
+          ? <>Inherited from <strong style={{ color: theme.ink }}>{rep.name}</strong>'s defaults at contract creation. Override here for this client only.</>
+          : <>No Account Manager assigned; rates apply only if an AM is later linked.</>}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        <Field label="Upfront %" theme={theme}>
+          <Input type="number" inputmode="decimal" value={up} onChange={setUp} placeholder="0.10" theme={theme}/>
+        </Field>
+        <Field label="Mid %" theme={theme}>
+          <Input type="number" inputmode="decimal" value={mid} onChange={setMid} placeholder="0.05" theme={theme}/>
+        </Field>
+        <Field label="End %" theme={theme}>
+          <Input type="number" inputmode="decimal" value={end} onChange={setEnd} placeholder="0.05" theme={theme}/>
+        </Field>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        <Button theme={theme} variant="primary" disabled={!dirty || busy} onClick={save}>
+          {busy ? 'Saving…' : 'Save rates'}
+        </Button>
+        {dirty && (
+          <Button theme={theme} variant="secondary" disabled={busy}
+                  onClick={() => { setUp(initial.upfrontPct); setMid(initial.midPct); setEnd(initial.endPct); }}>
+            Reset
+          </Button>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function AdminClientCalc({ state, theme, clientId, navigate, onSetCadence, onSetRates }) {
   const c = state.clients.find(cl => cl.id === clientId);
   if (!c) return <div style={{ padding: 24 }}>Client not found.</div>;
   const sub = CABT_clientSubScores(c, state.monthlyMetrics, state.surveys, state.config);
@@ -487,6 +546,21 @@ function AdminClientCalc({ state, theme, clientId, navigate, onSetCadence }) {
       </div>
 
       <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {onSetRates && (() => {
+          // Per-contract commission rate override (Bobby 2026-05-01).
+          // Inherits from the rep's defaults at contract creation; admin can tweak any time.
+          const rep = state.sales.find(s => s.id === c.ae);
+          const initial = {
+            upfrontPct: c.upfrontPct != null ? String(c.upfrontPct) : '',
+            midPct:     c.midPct     != null ? String(c.midPct)     : '',
+            endPct:     c.endPct     != null ? String(c.endPct)     : '',
+          };
+          // Local draft state via stable key (clientId) so realtime updates
+          // don't clobber an in-progress edit.
+          return <RatesCard theme={theme} clientId={c.id} initial={initial} rep={rep}
+                            onSave={(p) => onSetRates(c.id, p)} />;
+        })()}
+
         {onSetCadence && (() => {
           const cadence = c.loggingCadence || 'monthly';
           const wc = (state.weeklyCheckins  || []).filter(w => w.clientId === c.id).sort((a,b) => b.weekStart.localeCompare(a.weekStart));

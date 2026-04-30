@@ -317,12 +317,14 @@ function Textarea({ value, onChange, placeholder, theme, rows = 3, error, autoFo
 // the options panel. Renders via React portal to document.body so it escapes
 // any parent with overflow: hidden (the Body container, scroll wrappers, etc).
 // Position is computed from the trigger button's getBoundingClientRect.
-function Select({ value, onChange, options, theme, placeholder = '— select —', disabled = false }) {
+function Select({ value, onChange, options, theme, placeholder = '— select —', disabled = false, searchable }) {
   const [open, setOpen] = React.useState(false);
   const [focusIdx, setFocusIdx] = React.useState(-1);
   const [pos, setPos] = React.useState(null); // {left, top, width, dropUp}
+  const [query, setQuery] = React.useState('');
   const triggerRef = React.useRef(null);
   const panelRef = React.useRef(null);
+  const searchRef = React.useRef(null);
 
   const norm = React.useMemo(() => options.map(o => (
     typeof o === 'object' ? { value: o.value, label: o.label } : { value: o, label: o }
@@ -330,6 +332,14 @@ function Select({ value, onChange, options, theme, placeholder = '— select —
   const selected = norm.find(o => String(o.value) === String(value));
   const displayLabel = selected ? selected.label : placeholder;
   const hasValue = !!selected;
+
+  // Auto-enable search when there are many options. Caller can force on/off.
+  const showSearch = searchable !== undefined ? searchable : norm.length >= 8;
+  const filtered = React.useMemo(() => {
+    if (!showSearch || !query.trim()) return norm;
+    const q = query.trim().toLowerCase();
+    return norm.filter(o => String(o.label).toLowerCase().includes(q));
+  }, [norm, query, showSearch]);
 
   // Compute panel position from trigger rect. Prefers below; flips above if no room.
   const computePos = React.useCallback(() => {
@@ -371,10 +381,20 @@ function Select({ value, onChange, options, theme, placeholder = '— select —
   }, [open, computePos]);
 
   React.useEffect(() => {
-    if (!open) { setFocusIdx(-1); return; }
-    const idx = norm.findIndex(o => String(o.value) === String(value));
+    if (!open) { setFocusIdx(-1); setQuery(''); return; }
+    const idx = filtered.findIndex(o => String(o.value) === String(value));
     setFocusIdx(idx >= 0 ? idx : 0);
-  }, [open, value, norm]);
+    // Auto-focus the search box when opened (skips on touch keyboards via timeout)
+    if (showSearch) {
+      setTimeout(() => { try { searchRef.current?.focus(); } catch (_e) {} }, 0);
+    }
+  }, [open]);
+
+  // Reset focus when filter changes
+  React.useEffect(() => {
+    if (!open) return;
+    setFocusIdx(filtered.length > 0 ? 0 : -1);
+  }, [query]);
 
   const onKey = (e) => {
     if (disabled) return;
@@ -383,12 +403,12 @@ function Select({ value, onChange, options, theme, placeholder = '— select —
     }
     if (!open) return;
     if (e.key === 'Escape') { e.preventDefault(); setOpen(false); return; }
-    if (e.key === 'ArrowDown') { e.preventDefault(); setFocusIdx(i => Math.min(norm.length - 1, i + 1)); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setFocusIdx(i => Math.min(filtered.length - 1, i + 1)); return; }
     if (e.key === 'ArrowUp')   { e.preventDefault(); setFocusIdx(i => Math.max(0, i - 1)); return; }
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (focusIdx >= 0 && focusIdx < norm.length) {
-        onChange(norm[focusIdx].value); setOpen(false);
+      if (focusIdx >= 0 && focusIdx < filtered.length) {
+        onChange(filtered[focusIdx].value); setOpen(false);
       }
     }
   };
@@ -415,10 +435,31 @@ function Select({ value, onChange, options, theme, placeholder = '— select —
         WebkitOverflowScrolling: 'touch',
       }}
     >
-      {norm.length === 0 && (
-        <div style={{ padding: '12px 14px', fontSize: 14, color: theme.inkMuted }}>No options</div>
+      {showSearch && (
+        <div style={{ padding: 4, position: 'sticky', top: 0, background: theme.bgElev, zIndex: 1, borderBottom: `1px solid ${theme.rule}` }}>
+          <input
+            ref={searchRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onKey}
+            placeholder={`Search ${norm.length} options…`}
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              padding: '8px 10px', borderRadius: 8,
+              background: theme.bg, border: `1px solid ${theme.rule}`,
+              color: theme.ink, fontSize: 14, fontFamily: 'inherit',
+              outline: 'none',
+            }}
+          />
+        </div>
       )}
-      {norm.map((o, i) => {
+      {filtered.length === 0 && (
+        <div style={{ padding: '12px 14px', fontSize: 14, color: theme.inkMuted }}>
+          {query ? `No matches for "${query}"` : 'No options'}
+        </div>
+      )}
+      {filtered.map((o, i) => {
         const isSelected = String(o.value) === String(value);
         const isFocused = i === focusIdx;
         return (

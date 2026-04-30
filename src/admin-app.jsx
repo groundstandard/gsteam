@@ -541,6 +541,17 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
   const [salesId, setSalesId] = React.useState(isSales ? (row.id || '') : '');
   const [active, setActive]   = React.useState(row.active !== false);
 
+  // ── per-sales-rep default commission rates (Bobby 2026-05-01) ──
+  const [upfrontRate, setUpfrontRate] = React.useState(
+    row.upfrontRate != null ? String(row.upfrontRate) : ''
+  );
+  const [midRate, setMidRate] = React.useState(
+    row.midRate != null ? String(row.midRate) : ''
+  );
+  const [endRate, setEndRate] = React.useState(
+    row.endRate != null ? String(row.endRate) : ''
+  );
+
   // ── reset-password state ────────────────────────────────────────
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
@@ -592,7 +603,20 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
     return patch;
   };
   const patch = buildPatch();
-  const hasChanges = Object.keys(patch).length > 0;
+
+  // Commission rates change separately — they're in sales_team, not auth/profile.
+  // Sent direct to Supabase, not through the EF.
+  const buildRatesPatch = () => {
+    if (!isSales) return null;
+    const p = {};
+    const cur = (n) => (n === '' || n == null) ? null : Number(n);
+    if (cur(upfrontRate) !== (row.upfrontRate ?? null)) p.upfrontRate = cur(upfrontRate);
+    if (cur(midRate)     !== (row.midRate     ?? null)) p.midRate     = cur(midRate);
+    if (cur(endRate)     !== (row.endRate     ?? null)) p.endRate     = cur(endRate);
+    return Object.keys(p).length ? p : null;
+  };
+  const ratesPatch = buildRatesPatch();
+  const hasChanges = Object.keys(patch).length > 0 || !!ratesPatch;
 
   const submitEdit = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -602,7 +626,20 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
     if (!hasChanges) return setErrMsg('Nothing to save — no fields changed.');
     setSubmitting(true);
     try {
-      await CABT_editUser({ action: 'update_profile', userId, ...patch });
+      // Profile fields go through the EF (auth-touching); commission rates
+      // are direct table updates because they're not auth-related.
+      if (Object.keys(patch).length) {
+        await CABT_editUser({ action: 'update_profile', userId, ...patch });
+      }
+      if (ratesPatch) {
+        const sb = await CABT_sb();
+        const dbPatch = {};
+        if ('upfrontRate' in ratesPatch) dbPatch.upfront_rate = ratesPatch.upfrontRate;
+        if ('midRate'     in ratesPatch) dbPatch.mid_rate     = ratesPatch.midRate;
+        if ('endRate'     in ratesPatch) dbPatch.end_rate     = ratesPatch.endRate;
+        const { error } = await sb.from('sales_team').update(dbPatch).eq('id', row.id);
+        if (error) throw error;
+      }
       onSuccess('Saved ' + (row.name || 'teammate'));
     } catch (err) {
       const code = err && err.message;
@@ -732,6 +769,30 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
               <Field label="Sales ID" hint="e.g. AM-02 or RDR-01." theme={theme}>
                 <Input value={salesId} onChange={setSalesId} placeholder="AM-02" theme={theme}/>
               </Field>
+            )}
+
+            {isSales && (formRole === 'am' || formRole === 'rdr') && (
+              <>
+                <div style={{ height: 1, background: theme.rule, margin: '6px 0 2px' }}/>
+                <div style={{ fontSize: 11, color: theme.inkMuted, letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 700, marginTop: 6 }}>
+                  Default commission rates
+                </div>
+                <div style={{ fontSize: 12, color: theme.inkMuted, marginTop: 2, marginBottom: 8, lineHeight: 1.4 }}>
+                  Auto-applied to new contracts this rep books. Admin can still override per-contract from the client edit screen.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  <Field label="Upfront %" theme={theme}>
+                    <Input type="number" inputmode="decimal" value={upfrontRate} onChange={setUpfrontRate} placeholder="0.10" theme={theme}/>
+                  </Field>
+                  <Field label="Mid %" theme={theme}>
+                    <Input type="number" inputmode="decimal" value={midRate} onChange={setMidRate} placeholder="0.05" theme={theme}/>
+                  </Field>
+                  <Field label="End %" theme={theme}>
+                    <Input type="number" inputmode="decimal" value={endRate} onChange={setEndRate} placeholder="0.05" theme={theme}/>
+                  </Field>
+                </div>
+                <div style={{ height: 1, background: theme.rule, margin: '8px 0 2px' }}/>
+              </>
             )}
 
             <Field label="Active" hint="Off = soft-deleted (preserves history)." theme={theme}>

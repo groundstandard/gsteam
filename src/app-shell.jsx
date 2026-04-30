@@ -263,6 +263,16 @@ function App() {
       showToast(`Cadence: ${cadence}`);
     }
   };
+  const setClientRates = async (cid, rates) => {
+    // rates = { upfrontPct, midPct, endPct } (any subset; only changed keys)
+    setState(s => ({ ...s, clients: s.clients.map(c => c.id === cid ? { ...c, ...rates } : c) }));
+    if (CABT_getApiMode() === 'supabase') {
+      try { await CABT_api.updateClient(cid, rates); showToast('Rates updated'); }
+      catch (e) { showToast('Rates save failed'); console.error('[setClientRates]', e); }
+    } else {
+      showToast('Rates updated');
+    }
+  };
   const updateConfig = (cfg) => { setState(s => ({ ...s, config: cfg })); showToast('Config saved'); navigate('back'); };
   const syncNow = () => { setPendingSync(0); setIsOffline(false); setTweak('demoOffline', false); showToast('Synced ✓'); };
   const resetData = () => { CABT_resetState(); setState(CABT_loadState()); showToast('Reset to seed'); };
@@ -359,7 +369,7 @@ function App() {
       case 'bonus':       return <AdminAnnualBonus state={state} theme={theme}/>;
       case 'revenue':     return <AdminRevenueLedger state={state} theme={theme}/>;
       case 'clients':         return <AdminClientRollup state={state} theme={theme} navigate={navigate}/>;
-      case 'client-calc':      return <AdminClientCalc state={state} theme={theme} clientId={route.params.clientId} navigate={navigate} onSetCadence={setCadence}/>;
+      case 'client-calc':      return <AdminClientCalc state={state} theme={theme} clientId={route.params.clientId} navigate={navigate} onSetCadence={setCadence} onSetRates={setClientRates}/>;
       case 'add-client':       return <AdminAddClient state={state} theme={theme} navigate={navigate} onSubmit={submitClient} presetFromStripe={route.params.presetFromStripe}/>;
       case 'pending-clients':  return <AdminPendingClients state={state} theme={theme} navigate={navigate}/>;
       case 'questions':   return <AdminOpenQuestions state={state} theme={theme}/>;
