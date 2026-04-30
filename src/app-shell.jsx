@@ -255,7 +255,7 @@ function App() {
         case 'log-event': return <LogEventForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} navigate={navigate} onSubmit={submitEvent}/>;
         case 'log-survey': return <LogSurveyForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} navigate={navigate} onSubmit={submitSurvey}/>;
         case 'scorecard': return <CAScorecard state={state} ca={ca} theme={theme} viz={t.scorecardViz}/>;
-        case 'profile': return <CAProfile state={state} ca={ca} theme={theme} navigate={navigate} profile={authedProfile} onSignOut={t.apiMode === 'supabase' && authedProfile ? async () => { await CABT_signOut(); setAuthedSession(null); setAuthedProfile(null); } : null}/>;
+        case 'profile': return <CAProfile state={state} ca={ca} theme={theme} navigate={navigate} profile={authedProfile} onSignOut={t.apiMode === 'supabase' && authedProfile ? async () => { if (!window.confirm('Sign out of gsTeam?')) return; try { await CABT_signOut(); } catch (_e) {} setAuthedSession(null); setAuthedProfile(null); } : null}/>;
         default: return null;
       }
     }
@@ -284,7 +284,7 @@ function App() {
       case 'audit-log':   return <AdminAuditLog state={state} theme={theme}/>;
       case 'config':      return <AdminConfig state={state} theme={theme} onUpdate={updateConfig}/>;
       case 'roster':      return <AdminRoster state={state} theme={theme} onReload={reloadLive} onToast={showToast}/>;
-      case 'more':        return <AdminMore theme={theme} navigate={navigate} profile={authedProfile} onSignOut={t.apiMode === 'supabase' && authedSession ? async () => { try { await CABT_signOut(); } catch (_e) {} setAuthedSession(null); setAuthedProfile(null); } : null}/>;
+      case 'more':        return <AdminMore theme={theme} navigate={navigate} profile={authedProfile} onSignOut={t.apiMode === 'supabase' && authedSession ? async () => { if (!window.confirm('Sign out of gsTeam?')) return; try { await CABT_signOut(); } catch (_e) {} setAuthedSession(null); setAuthedProfile(null); } : null}/>;
       default: return null;
     }
   };
@@ -355,42 +355,8 @@ function App() {
             }}
           />
           <RoleSwitcher role={role} onChange={setRole} theme={theme}/>
-          {/* Sign out — visible globally for any signed-in user (CA / Sales / Admin) */}
-          {t.apiMode === 'supabase' && authedSession && (
-            <button
-              type="button"
-              onClick={async () => {
-                try { await CABT_signOut(); } catch (_e) {}
-                setAuthedSession(null); setAuthedProfile(null);
-              }}
-              title="Sign out"
-              aria-label="Sign out"
-              className="cabt-btn-press"
-              style={{
-                width: 32, height: 28, padding: '0 4px',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'transparent',
-                border: `1px solid ${theme.rule}`,
-                borderRadius: 999,
-                color: theme.inkSoft,
-                cursor: 'pointer', fontFamily: 'inherit',
-                WebkitTapHighlightColor: 'transparent',
-                transition: 'color 0.15s ease, border-color 0.15s ease, background 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = '#C62828';
-                e.currentTarget.style.borderColor = '#C62828' + '55';
-                e.currentTarget.style.background = '#C62828' + '0F';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = theme.inkSoft;
-                e.currentTarget.style.borderColor = theme.rule;
-                e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <Icon name="logout" size={15} stroke={2}/>
-            </button>
-          )}
+          {/* Sign out lives in role-specific menus (CA → Me, Admin → More).
+             No global top-bar button — keeps the header tidy. */}
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
           <div style={{
