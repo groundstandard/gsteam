@@ -13,6 +13,36 @@ function AuthGate({ theme, onAuthed }) {
   const [resetBusy, setResetBusy] = React.useState(false);
   const [resetError, setResetError] = React.useState(null);
   const [resetSent, setResetSent] = React.useState(false);
+  const [hardResetting, setHardResetting] = React.useState(false);
+
+  // Detect missing/broken config — when this is true, sign-in will throw
+  // "supabaseKey is required" and the user gets stuck. Show a recovery banner.
+  const configBroken = typeof window !== 'undefined' && (
+    !window.CABT_CONFIG ||
+    !window.CABT_CONFIG.SUPABASE_URL ||
+    !window.CABT_CONFIG.SUPABASE_ANON_KEY
+  );
+
+  // Emergency: unregister all service workers, clear caches + localStorage,
+  // then hard-reload bypassing the SW. This recovers PWAs that cached a stale
+  // config.js (empty SUPABASE_ANON_KEY) before the env vars were set in Vercel.
+  const hardReset = async () => {
+    if (hardResetting) return;
+    setHardResetting(true);
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      try { localStorage.clear(); sessionStorage.clear(); } catch (_e) {}
+    } catch (_e) { /* swallow — best effort */ }
+    // Force a real network reload bypassing any leftover state.
+    window.location.replace('/?cb=' + Date.now());
+  };
 
   const openReset = () => {
     setResetEmail(email || '');
@@ -224,9 +254,59 @@ function AuthGate({ theme, onAuthed }) {
           </div>
         )}
 
-        <div style={{ marginTop: 36, fontSize: 11, color: theme.inkMuted, lineHeight: 1.6 }}>
+        {/* Config-broken recovery banner — appears when window.CABT_CONFIG
+            is missing/empty (e.g., a stale cached config.js from before
+            env vars were set). One-tap recovery: clear caches + reload. */}
+        {configBroken && (
+          <div style={{
+            marginTop: 16, padding: '14px 16px', borderRadius: 12,
+            background: '#FFF4D6', color: '#5A3F00', border: '1px solid #E5C66E',
+            fontSize: 12, lineHeight: 1.55, textAlign: 'left',
+          }}>
+            <strong style={{ fontSize: 13 }}>App needs a refresh.</strong>
+            <div style={{ marginTop: 4, marginBottom: 10 }}>
+              The app is using an outdated cache and can't connect. Tap below to
+              clear it and reload — you'll need to sign in again.
+            </div>
+            <button
+              type="button"
+              onClick={hardReset}
+              disabled={hardResetting}
+              style={{
+                width: '100%', padding: '12px 14px', borderRadius: 10,
+                background: '#5A3F00', color: '#FFF4D6', border: 'none',
+                fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
+                cursor: hardResetting ? 'wait' : 'pointer',
+                opacity: hardResetting ? 0.6 : 1,
+              }}
+            >
+              {hardResetting ? 'Clearing…' : 'Clear cache and reload'}
+            </button>
+          </div>
+        )}
+
+        <div style={{ marginTop: 24, fontSize: 11, color: theme.inkMuted, lineHeight: 1.6, textAlign: 'center' }}>
           No account? Ask Bobby to create one for you.
         </div>
+
+        {/* Always-available "stuck?" escape hatch — small link below.
+            For users who load fine but get stuck verifying / signing in. */}
+        {!configBroken && (
+          <div style={{ marginTop: 20, textAlign: 'center' }}>
+            <button
+              type="button"
+              onClick={hardReset}
+              disabled={hardResetting}
+              style={{
+                background: 'none', border: 'none', padding: 4,
+                fontFamily: 'inherit', fontSize: 11, color: theme.inkMuted,
+                textDecoration: 'underline', cursor: hardResetting ? 'wait' : 'pointer',
+              }}
+            >
+              {hardResetting ? 'Clearing…' : 'Stuck? Clear cache and reload'}
+            </button>
+          </div>
+        )}
       </div>
 
       {showReset && (

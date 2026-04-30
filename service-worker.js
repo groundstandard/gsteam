@@ -7,7 +7,7 @@
 //
 // 1777255980 is replaced at build time by scripts/build-pwa.mjs.
 
-const VERSION = '1777557130';
+const VERSION = '1777558062';
 const CACHE   = `cabt-${VERSION}`;
 
 // Files known at install time. Other same-origin requests are cached on first hit.
@@ -89,6 +89,24 @@ self.addEventListener('fetch', (event) => {
 
   // Only handle same-origin GETs
   if (url.origin !== self.location.origin) return;
+
+  // CRITICAL: /config.js holds Supabase credentials injected at build time
+  // by Vercel. NEVER cache it — if env vars change in Vercel and we cached
+  // an old empty config.js, the PWA gets stuck on "Verifying session"
+  // because Supabase init fails. Always fetch from network with no-cache.
+  if (url.pathname === '/config.js') {
+    event.respondWith(
+      fetch(req, { cache: 'no-store' }).catch(() =>
+        // Last-ditch fallback: if network is down, return an empty config so
+        // the app at least gets to the offline screen instead of crashing.
+        new Response(
+          'window.CABT_CONFIG = window.CABT_CONFIG || { SUPABASE_URL: "", SUPABASE_ANON_KEY: "" };',
+          { headers: { 'Content-Type': 'application/javascript' } }
+        )
+      )
+    );
+    return;
+  }
 
   // Navigation requests get special handling on iOS: ALWAYS prefer /index.html
   // from cache as the fastest reliable response. Skips weird cache-key matching
