@@ -1171,7 +1171,7 @@ function AdminAuditLog({ state, theme }) {
   );
 }
 
-function AdminMore({ theme, navigate }) {
+function AdminMore({ theme, navigate, profile, onSignOut }) {
   const items = [
     { name: 'edits',     icon: 'edit',  label: 'Edit Requests',   desc: 'Approve protected-field edits past grace' },
     { name: 'reviews',   icon: 'star',  label: 'Reviews Inbox',   desc: 'Match incoming reviews to clients' },
@@ -1183,13 +1183,36 @@ function AdminMore({ theme, navigate }) {
   ];
   return (
     <div style={{ padding: '8px 16px 100px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {profile && (
+        <Card theme={theme} padding={16}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 44, height: 44, borderRadius: 22,
+              background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent}CC)`,
+              color: theme.accentInk,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: theme.serif, fontWeight: 600, fontSize: 18, letterSpacing: -0.3,
+              flexShrink: 0,
+            }}>{((profile.displayName || profile.display_name || profile.email || 'A').split(/\s+/).map(s => s[0]).slice(0, 2).join('')).toUpperCase()}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: theme.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {profile.displayName || profile.display_name || 'Signed in'}
+              </div>
+              <div style={{ fontSize: 12, color: theme.inkMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {profile.email}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
       <Card theme={theme} padding={0}>
         {items.map((it, i) => (
-          <button key={it.name} onClick={() => navigate(it.name)} style={{
+          <button key={it.name} onClick={() => navigate(it.name)} className="cabt-btn-press" style={{
             display: 'flex', alignItems: 'center', gap: 14, width: '100%',
             background: 'transparent', border: 'none',
             padding: '16px', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
             borderBottom: i === items.length - 1 ? 'none' : `1px solid ${theme.rule}`,
+            WebkitTapHighlightColor: 'transparent',
           }}>
             <div style={{
               width: 36, height: 36, borderRadius: 10,
@@ -1204,6 +1227,19 @@ function AdminMore({ theme, navigate }) {
           </button>
         ))}
       </Card>
+      {onSignOut && (
+        <button
+          onClick={onSignOut}
+          className="cabt-btn-press"
+          style={{
+            width: '100%', padding: '14px 16px',
+            background: 'transparent', border: `1.5px solid ${theme.rule}`,
+            borderRadius: 14, color: theme.ink,
+            fontSize: 15, fontWeight: 600, fontFamily: 'inherit',
+            cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+          }}
+        >Sign out</button>
+      )}
       <div style={{ fontSize: 11, color: theme.inkMuted, textAlign: 'center', padding: '12px 0', letterSpacing: 0.4 }}>
         gsTeam Scoreboard · Admin · v0.2
       </div>

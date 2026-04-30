@@ -284,7 +284,7 @@ function App() {
       case 'audit-log':   return <AdminAuditLog state={state} theme={theme}/>;
       case 'config':      return <AdminConfig state={state} theme={theme} onUpdate={updateConfig}/>;
       case 'roster':      return <AdminRoster state={state} theme={theme} onReload={reloadLive} onToast={showToast}/>;
-      case 'more':        return <AdminMore theme={theme} navigate={navigate}/>;
+      case 'more':        return <AdminMore theme={theme} navigate={navigate} profile={authedProfile} onSignOut={t.apiMode === 'supabase' && authedSession ? async () => { try { await CABT_signOut(); } catch (_e) {} setAuthedSession(null); setAuthedProfile(null); } : null}/>;
       default: return null;
     }
   };
@@ -355,6 +355,31 @@ function App() {
             }}
           />
           <RoleSwitcher role={role} onChange={setRole} theme={theme}/>
+          {/* Sign out — visible globally for any signed-in user (CA / Sales / Admin) */}
+          {t.apiMode === 'supabase' && authedSession && (
+            <button
+              type="button"
+              onClick={async () => {
+                try { await CABT_signOut(); } catch (_e) {}
+                setAuthedSession(null); setAuthedProfile(null);
+              }}
+              title="Sign out"
+              aria-label="Sign out"
+              className="cabt-btn-press"
+              style={{
+                width: 30, height: 28, padding: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'transparent',
+                border: `1px solid ${theme.rule}`,
+                borderRadius: 999,
+                color: theme.inkSoft,
+                cursor: 'pointer', fontFamily: 'inherit',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              <Icon name="x" size={14} stroke={2.2}/>
+            </button>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
           <div style={{
