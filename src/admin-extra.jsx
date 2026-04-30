@@ -487,35 +487,52 @@ function AdminClientCalc({ state, theme, clientId, navigate, onSetCadence }) {
       </div>
 
       <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {onSetCadence && (
-          <Card theme={theme} padding={14}>
-            <SectionLabel theme={theme}>Logging cadence</SectionLabel>
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              {['monthly', 'weekly'].map(opt => {
-                const active = (c.loggingCadence || 'monthly') === opt;
-                return (
-                  <button
-                    key={opt}
-                    onClick={() => !active && onSetCadence(c.id, opt)}
-                    style={{
-                      flex: 1, padding: '10px 12px', borderRadius: 8,
-                      background: active ? (theme.accentSoft || 'rgba(215,255,61,0.12)') : 'transparent',
-                      border: `1.5px solid ${active ? (theme.accent || '#D7FF3D') : theme.rule}`,
-                      color: theme.ink, fontWeight: active ? 700 : 500, fontSize: 13,
-                      cursor: active ? 'default' : 'pointer', textAlign: 'center',
-                      fontFamily: 'inherit', textTransform: 'capitalize',
-                    }}>
-                    {opt}
-                    {active && <span style={{ marginLeft: 6, fontSize: 10, color: theme.inkMuted, fontWeight: 600 }}>· current</span>}
-                  </button>
-                );
-              })}
-            </div>
-            <div style={{ fontSize: 11, color: theme.inkMuted, marginTop: 8, lineHeight: 1.4 }}>
-              Controls how the CA logs narrative check-ins. Monthly snapshots (MRR, total students) stay monthly regardless.
-            </div>
-          </Card>
-        )}
+        {onSetCadence && (() => {
+          const cadence = c.loggingCadence || 'monthly';
+          const wc = (state.weeklyCheckins  || []).filter(w => w.clientId === c.id).sort((a,b) => b.weekStart.localeCompare(a.weekStart));
+          const mc = (state.monthlyCheckins || []).filter(m => m.clientId === c.id).sort((a,b) => b.month.localeCompare(a.month));
+          const latest = cadence === 'weekly' ? wc[0] : mc[0];
+          return (
+            <Card theme={theme} padding={14}>
+              <SectionLabel theme={theme}>Logging cadence</SectionLabel>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                {['monthly', 'weekly'].map(opt => {
+                  const active = cadence === opt;
+                  return (
+                    <button
+                      key={opt}
+                      onClick={() => !active && onSetCadence(c.id, opt)}
+                      style={{
+                        flex: 1, padding: '10px 12px', borderRadius: 8,
+                        background: active ? (theme.accentSoft || 'rgba(215,255,61,0.12)') : 'transparent',
+                        border: `1.5px solid ${active ? (theme.accent || '#D7FF3D') : theme.rule}`,
+                        color: theme.ink, fontWeight: active ? 700 : 500, fontSize: 13,
+                        cursor: active ? 'default' : 'pointer', textAlign: 'center',
+                        fontFamily: 'inherit', textTransform: 'capitalize',
+                      }}>
+                      {opt}
+                      {active && <span style={{ marginLeft: 6, fontSize: 10, color: theme.inkMuted, fontWeight: 600 }}>· current</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11, color: theme.inkMuted, marginTop: 8, lineHeight: 1.5 }}>
+                Controls only how often the CA logs <strong>narrative check-ins</strong> (concern, win, account-side, agency-side actions). Numeric metrics shown below (MRR, ad spend, etc.) always come from monthly_metrics regardless.
+              </div>
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${theme.rule}`, fontSize: 11, color: theme.inkMuted }}>
+                {cadence === 'weekly'
+                  ? `Weekly check-ins logged: ${wc.length}`
+                  : `Monthly check-ins logged: ${mc.length}`}
+                {latest && (
+                  <span style={{ marginLeft: 8 }}>
+                    · last: {cadence === 'weekly' ? `week of ${CABT_fmtDate(latest.weekStart)}` : CABT_fmtMonth(latest.month)}
+                  </span>
+                )}
+                {!latest && <span style={{ marginLeft: 8, fontStyle: 'italic' }}>· none yet</span>}
+              </div>
+            </Card>
+          );
+        })()}
 
         <Card theme={theme} padding={14}>
           <SectionLabel theme={theme}>Inputs (last {recent.length} months)</SectionLabel>
@@ -945,6 +962,14 @@ function AdminAddClient({ state, theme, navigate, onSubmit, presetFromStripe }) 
           <Select value={form.assignedCA} onChange={(v) => setForm({ ...form, assignedCA: v })}
             options={[{ value: '', label: '— assign later —' }, ...cas]} theme={theme}/>
         </Field>
+        <div style={{ height: 10 }}/>
+        <Field label="Logging cadence" hint="How often does the CA log narrative check-ins? Monthly snapshots (MRR + students) stay monthly regardless." theme={theme}>
+          <Select value={form.loggingCadence} onChange={(v) => setForm({ ...form, loggingCadence: v })}
+            options={[
+              { value: 'monthly', label: 'Monthly — one check-in per month' },
+              { value: 'weekly',  label: 'Weekly — check-in every week' },
+            ]} theme={theme}/>
+        </Field>
       </Card>
 
       <Card theme={theme} padding={14}>
@@ -1042,14 +1067,6 @@ function AdminAddClient({ state, theme, navigate, onSubmit, presetFromStripe }) 
                   { value: 'stripe_wins',    label: 'Stripe wins (auto-overwrite, show diff)' },
                   { value: 'ca_wins',        label: 'CA wins (Stripe is informational only)' },
                   { value: 'lower_of_both',  label: 'Score the lower of the two' },
-                ]} theme={theme}/>
-            </Field>
-            <div style={{ height: 10 }}/>
-            <Field label="Logging cadence" hint="How often does the CA log narrative check-ins for this client? Monthly snapshots (MRR + students) stay monthly regardless." theme={theme}>
-              <Select value={form.loggingCadence} onChange={(v) => setForm({ ...form, loggingCadence: v })}
-                options={[
-                  { value: 'monthly', label: 'Monthly — one check-in per month' },
-                  { value: 'weekly',  label: 'Weekly — check-in every week' },
                 ]} theme={theme}/>
             </Field>
           </Card>
