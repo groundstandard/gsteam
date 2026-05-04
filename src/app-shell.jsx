@@ -381,6 +381,7 @@ function App() {
       case 'pending-clients':  return <AdminPendingClients state={state} theme={theme} navigate={navigate}/>;
       case 'questions':   return <AdminOpenQuestions state={state} theme={theme}/>;
       case 'audit-log':   return <AdminAuditLog state={state} theme={theme}/>;
+      case 'formula-inspector': return <AdminFormulaInspector state={state} theme={theme} navigate={navigate}/>;
       case 'config':      return <AdminConfig state={state} theme={theme} onUpdate={updateConfig}/>;
       case 'roster':      return <AdminRoster state={state} theme={theme} onReload={reloadLive} onToast={showToast}/>;
       case 'more':        return <AdminMore theme={theme} navigate={navigate} profile={authedProfile} onSignOut={t.apiMode === 'supabase' && authedSession ? () => askConfirm({

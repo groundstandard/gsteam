@@ -1627,6 +1627,7 @@ function AdminMore({ theme, navigate, profile, onSignOut }) {
     { name: 'edits',     icon: 'edit',  label: 'Edit Requests',   desc: 'Approve protected-field edits past grace' },
     { name: 'reviews',   icon: 'star',  label: 'Reviews Inbox',   desc: 'Match incoming reviews to clients' },
     { name: 'pending-clients', icon: 'cash', label: 'Pending Clients', desc: 'Approve new Stripe customers' },
+    { name: 'formula-inspector', icon: 'chart', label: 'Formula Inspector', desc: 'See exactly how every score is computed' },
     { name: 'questions', icon: 'alert', label: 'Open Questions',  desc: 'Decisions pending leadership' },
     { name: 'audit-log', icon: 'shield', label: 'Audit Log',       desc: 'Read-only history of changes' },
     { name: 'config',    icon: 'cog',   label: 'Config',          desc: 'Scoring thresholds & quarter window' },
@@ -1698,7 +1699,220 @@ function AdminMore({ theme, navigate, profile, onSignOut }) {
   );
 }
 
+// ── Formula Inspector ──────────────────────────────────────────────────────
+// Bobby's 2026-05-05 request: "Can we create an admin page where I can check
+// the formulas and calculations?" — full transparency into how every score
+// is computed for a chosen CA. Pulls from the same calc.jsx the UI uses, so
+// what's shown here matches what the CA sees. Drilldown: pick a CA → see
+// each bucket's inputs, formula, and per-client breakdown.
+function AdminFormulaInspector({ state, theme, navigate }) {
+  const cas = (state.cas || []).filter(c => c.active);
+  const [selectedCaId, setSelectedCaId] = React.useState(cas[0]?.id || '');
+  const [expandedSection, setExpandedSection] = React.useState({ overview: true });
+
+  const selectedCa = cas.find(c => c.id === selectedCaId);
+  const score = selectedCa ? CABT_caScorecard(selectedCa, state) : null;
+  const cfg = state.config || {};
+
+  if (cas.length === 0) {
+    return <div style={{ padding: 24, color: theme.inkMuted }}>No active CAs.</div>;
+  }
+
+  const toggle = (k) => setExpandedSection(s => ({ ...s, [k]: !s[k] }));
+
+  const Section = ({ id, title, children }) => {
+    const open = !!expandedSection[id];
+    return (
+      <Card theme={theme} padding={0}>
+        <button onClick={() => toggle(id)} style={{
+          width: '100%', padding: '12px 14px', background: 'transparent', border: 'none',
+          display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+        }}>
+          <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: theme.ink, letterSpacing: -0.1 }}>{title}</span>
+          <Icon name={open ? 'chev-u' : 'chev-d'} size={16} color={theme.inkMuted}/>
+        </button>
+        {open && <div style={{ padding: '0 14px 14px' }}>{children}</div>}
+      </Card>
+    );
+  };
+
+  const KV = ({ k, v, mono }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0', fontSize: 12 }}>
+      <span style={{ color: theme.inkMuted }}>{k}</span>
+      <span style={{ color: theme.ink, fontWeight: 600, fontFamily: mono ? theme.mono : 'inherit', fontVariantNumeric: 'tabular-nums' }}>{v}</span>
+    </div>
+  );
+
+  const Formula = ({ children }) => (
+    <div style={{
+      background: theme.bgSoft || 'rgba(255,255,255,0.04)',
+      border: `1px solid ${theme.rule}`,
+      borderRadius: 8, padding: '8px 12px', fontSize: 11, fontFamily: theme.mono,
+      color: theme.ink, lineHeight: 1.5, marginTop: 6, marginBottom: 8,
+      wordBreak: 'break-word',
+    }}>{children}</div>
+  );
+
+  const myClients = (state.clients || []).filter(c => c.assignedCA === selectedCa?.id && !c.cancelDate);
+  const eligibleClients = myClients.filter(c => (c.tier || 'standard') === 'standard' || c.tier === 'vip');
+  const eligibleAtStart = (state.clients || []).filter(c =>
+    c.assignedCA === selectedCa?.id &&
+    ((c.tier || 'standard') === 'standard' || c.tier === 'vip') &&
+    c.signDate && new Date(c.signDate) < new Date(cfg.quarterStart || cfg.quarter_start || new Date())
+  );
+
+  return (
+    <div style={{ padding: '8px 16px 100px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <Card theme={theme} padding={14}>
+        <SectionLabel theme={theme}>Formula Inspector</SectionLabel>
+        <div style={{ fontSize: 12, color: theme.inkMuted, marginTop: 4, marginBottom: 10, lineHeight: 1.5 }}>
+          Pick a CA to see how their composite + each bucket is computed. Inputs, intermediate values, and formulas are all shown so any number can be cross-checked against the legacy Bonus Tracker Sheet.
+        </div>
+        <Field label="CA" theme={theme}>
+          <Select value={selectedCaId} onChange={setSelectedCaId} theme={theme}
+            options={cas.map(c => ({ value: c.id, label: `${c.id} · ${c.name}` }))}/>
+        </Field>
+      </Card>
+
+      {score && (
+        <>
+          <Section id="overview" title={`Composite — ${(score.composite*100).toFixed(0)}/100`}>
+            <Formula>
+              composite = (Performance + Retention + Growth) ÷ 3<br/>
+              = ({(score.performance*100).toFixed(1)} + {(score.retention*100).toFixed(1)} + {(score.growth*100).toFixed(1)}) ÷ 3<br/>
+              = {(score.composite*100).toFixed(1)}
+            </Formula>
+            <KV k="Performance bucket" v={(score.performance*100).toFixed(1)} mono/>
+            <KV k="Retention bucket" v={(score.retention*100).toFixed(1)} mono/>
+            <KV k="Growth bucket" v={(score.growth*100).toFixed(1)} mono/>
+            <div style={{ borderTop: `1px solid ${theme.rule}`, marginTop: 6, paddingTop: 6 }}/>
+            <KV k="Book completeness gate" v={(score.bookCompleteness*100).toFixed(1) + '%'} mono/>
+            <KV k="Eligible clients (Standard + VIP)" v={score.eligibleClientCount || eligibleClients.length} mono/>
+            <KV k="Clients with perf data" v={score.perfDataClientCount || 0} mono/>
+          </Section>
+
+          <Section id="performance" title={`Performance bucket — ${(score.performance*100).toFixed(0)}/100`}>
+            <Formula>
+              performance = (avg of per-client performance, skip nulls) × bookCompleteness<br/>
+              <br/>
+              per-client performance = avg of 5 sub-scores (skip nulls):<br/>
+              &nbsp;&nbsp;MRR Growth · Lead Cost · Ad Spend · Funnel · Attrition
+            </Formula>
+            <KV k="Raw perf avg (clients with data)" v={(score.performanceRaw*100).toFixed(1)} mono/>
+            <KV k="× Book completeness gate" v={(score.bookCompleteness*100).toFixed(1) + '%'} mono/>
+            <KV k="= Performance bucket" v={(score.performance*100).toFixed(1)} mono/>
+            <div style={{ marginTop: 10, fontSize: 11, color: theme.inkMuted, lineHeight: 1.5 }}>
+              Per-client breakdown (only clients with at least one sub-score):
+            </div>
+            <div style={{ marginTop: 6, fontSize: 11 }}>
+              {(score.clients || []).filter(s => s.sub && s.sub.performance != null).slice(0, 20).map(s => (
+                <div key={s.client.id} style={{ display: 'flex', gap: 6, padding: '4px 0', borderBottom: `1px solid ${theme.rule}` }}>
+                  <span style={{ flex: 1, color: theme.ink, fontWeight: 600 }}>{s.client.name}</span>
+                  <span style={{ width: 60, textAlign: 'right', color: theme.inkMuted, fontFamily: theme.mono }}>{s.sub.mrrGrowth != null ? (s.sub.mrrGrowth*100).toFixed(0) : '—'}</span>
+                  <span style={{ width: 60, textAlign: 'right', color: theme.inkMuted, fontFamily: theme.mono }}>{s.sub.leadCost != null ? (s.sub.leadCost*100).toFixed(0) : '—'}</span>
+                  <span style={{ width: 60, textAlign: 'right', color: theme.inkMuted, fontFamily: theme.mono }}>{s.sub.adSpend != null ? (s.sub.adSpend*100).toFixed(0) : '—'}</span>
+                  <span style={{ width: 60, textAlign: 'right', color: theme.inkMuted, fontFamily: theme.mono }}>{s.sub.funnel != null ? (s.sub.funnel*100).toFixed(0) : '—'}</span>
+                  <span style={{ width: 60, textAlign: 'right', color: theme.inkMuted, fontFamily: theme.mono }}>{s.sub.attrition != null ? (s.sub.attrition*100).toFixed(0) : '—'}</span>
+                  <span style={{ width: 60, textAlign: 'right', color: theme.ink, fontWeight: 700, fontFamily: theme.mono }}>{(s.sub.performance*100).toFixed(0)}</span>
+                </div>
+              ))}
+              {(score.clients || []).filter(s => s.sub && s.sub.performance != null).length === 0 && (
+                <div style={{ padding: 8, color: theme.inkMuted, fontStyle: 'italic' }}>
+                  No clients have monthly metrics logged yet for this CA.
+                </div>
+              )}
+            </div>
+            <div style={{ marginTop: 6, fontSize: 9, color: theme.inkMuted, fontFamily: theme.mono, display: 'flex', gap: 6 }}>
+              <span style={{ flex: 1 }}>CLIENT</span>
+              <span style={{ width: 60, textAlign: 'right' }}>MRR↑</span>
+              <span style={{ width: 60, textAlign: 'right' }}>LEAD$</span>
+              <span style={{ width: 60, textAlign: 'right' }}>AD$</span>
+              <span style={{ width: 60, textAlign: 'right' }}>FUNNEL</span>
+              <span style={{ width: 60, textAlign: 'right' }}>ATTR</span>
+              <span style={{ width: 60, textAlign: 'right' }}>PERF</span>
+            </div>
+          </Section>
+
+          <Section id="retention" title={`Retention bucket — ${(score.retention*100).toFixed(0)}/100`}>
+            <Formula>
+              retention = (eligible_at_quarter_start − cancellations_counts_against_ca) ÷ eligible_at_quarter_start<br/>
+              <br/>
+              Linear from cliff ({((cfg.retentionCliff || cfg.retention_cliff || 0.97)*100).toFixed(0)}%) to 100%.<br/>
+              Below cliff = 0; at 100% retained = 1.0.
+            </Formula>
+            <KV k="Eligible at quarter start" v={score.eligibleAtQuarterStart || eligibleAtStart.length} mono/>
+            <KV k="Cancellations counted against CA" v={score.cancelledThisQuarter || 0} mono/>
+            <KV k="= Retention rate" v={
+              score.eligibleAtQuarterStart > 0
+                ? `${(((score.eligibleAtQuarterStart - score.cancelledThisQuarter) / score.eligibleAtQuarterStart)*100).toFixed(1)}%`
+                : '—'
+            } mono/>
+            <KV k="Retention cliff (config)" v={`${((cfg.retentionCliff || cfg.retention_cliff || 0.97)*100).toFixed(0)}%`} mono/>
+            <KV k="= Retention bucket" v={(score.retention*100).toFixed(1)} mono/>
+          </Section>
+
+          <Section id="growth" title={`Growth bucket — ${(score.growth*100).toFixed(0)}/100`}>
+            <Formula>
+              growth = total_points ÷ max_points<br/>
+              max_points = 8 × eligible_clients (90+ days old, Standard or VIP)<br/>
+              <br/>
+              Per client (1pt each, max 8):<br/>
+              &nbsp;&nbsp;• Review obtained this quarter<br/>
+              &nbsp;&nbsp;• Testimonial obtained<br/>
+              &nbsp;&nbsp;• Case study obtained<br/>
+              &nbsp;&nbsp;• ≥1 referral this quarter<br/>
+              &nbsp;&nbsp;• On VIP tier<br/>
+              &nbsp;&nbsp;• Has membership add-on<br/>
+              &nbsp;&nbsp;• Has gear / products<br/>
+              &nbsp;&nbsp;• +0.25 per extra referral, capped at +1
+            </Formula>
+            <KV k="Eligible 90+ day clients" v={score.growthEligibleCount || 0} mono/>
+            <KV k="Max possible points" v={(score.growthEligibleCount || 0) * 8} mono/>
+            <KV k="= Growth bucket" v={(score.growth*100).toFixed(1)} mono/>
+          </Section>
+
+          <Section id="payout" title={`Bonus Payout — ${CABT_fmtMoney(score.finalPayout)}`}>
+            <Formula>
+              final_payout = total_pot × mrr_share × composite<br/>
+              total_pot = agency_gross_last_month × pot_pct (from quarter_inputs)<br/>
+              mrr_share = CA's eligible-MRR ÷ all eligible-MRR (across active CAs)
+            </Formula>
+            <KV k="Total pot" v={CABT_fmtMoney(score.totalPot || 0)} mono/>
+            <KV k="CA's eligible MRR" v={CABT_fmtMoney(score.caEligibleMrr || 0)} mono/>
+            <KV k="MRR share" v={`${((score.mrrShare || 0)*100).toFixed(2)}%`} mono/>
+            <KV k="× Composite" v={(score.composite*100).toFixed(1) + '%'} mono/>
+            <KV k="= Final payout" v={CABT_fmtMoney(score.finalPayout)} mono/>
+            <KV k="Max payout (at 100% composite)" v={CABT_fmtMoney(score.maxPayout)} mono/>
+            {(score.totalPot || 0) === 0 && (
+              <div style={{ marginTop: 8, padding: '8px 12px', background: '#fef0f0', border: '1px solid #d9535380', borderRadius: 6, fontSize: 11, color: '#7d2828' }}>
+                Total pot = $0 because <strong>quarter_inputs</strong> for this quarter is not set. Open <strong>Admin → Bonus</strong> and enter agency gross + pot %.
+              </div>
+            )}
+          </Section>
+
+          <Section id="config" title="Config thresholds (live)">
+            <KV k="Performance · MRR Growth full credit" v={`$${cfg.fullCreditMrrGrowth || 750}/mo`} mono/>
+            <KV k="Performance · Lead Cost best" v={`≤ $${cfg.leadCostBest || 5}`} mono/>
+            <KV k="Performance · Lead Cost great" v={`≤ $${cfg.leadCostGreat || 10}`} mono/>
+            <KV k="Performance · Lead Cost OK" v={`≤ $${cfg.leadCostAcceptable || 20}`} mono/>
+            <KV k="Performance · Ad Spend % of MRR" v={`${((cfg.adSpendPctOfGross || 0.10)*100).toFixed(0)}%`} mono/>
+            <KV k="Performance · Ad Spend floor" v={`$${cfg.adSpendFloor || 1000}`} mono/>
+            <KV k="Performance · Funnel booking floor" v={`${((cfg.bookingFloor || 0.30)*100).toFixed(0)}%`} mono/>
+            <KV k="Performance · Funnel show floor" v={`${((cfg.showFloor || 0.50)*100).toFixed(0)}%`} mono/>
+            <KV k="Performance · Funnel close floor" v={`${((cfg.closeFloor || 0.70)*100).toFixed(0)}%`} mono/>
+            <KV k="Performance · Attrition green floor" v={`${((cfg.attritionGreenFloor || 0.03)*100).toFixed(0)}%`} mono/>
+            <KV k="Performance · Attrition critical ceil" v={`${((cfg.attritionCriticalCeiling || 0.05)*100).toFixed(0)}%`} mono/>
+            <KV k="Retention · Cliff" v={`${((cfg.retentionCliff || 0.97)*100).toFixed(0)}%`} mono/>
+            <KV k="Grace period (days)" v={cfg.gracePeriodDays || 90} mono/>
+            <KV k="Pot · Default %" v={`${((cfg.potPercentage || 0.005)*100).toFixed(2)}%`} mono/>
+          </Section>
+        </>
+      )}
+    </div>
+  );
+}
+
 Object.assign(window, {
   AdminAnnualBonus, AdminRevenueLedger, AdminClientRollup, AdminClientCalc, AdminOpenQuestions, AdminAuditLog, AdminMore,
-  AdminAddClient, AdminPendingClients, CABT_nextClientId: nextClientId,
+  AdminAddClient, AdminPendingClients, AdminFormulaInspector, CABT_nextClientId: nextClientId,
 });

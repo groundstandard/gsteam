@@ -174,23 +174,47 @@ function BucketBreakdown({ score, state, theme }) {
   // 3 (Revenue, Ad efficiency, Funnel). Retention shows the real retention
   // rate; Growth shows points earned vs max.
   const subs = score.clients.map(c => c.sub).filter(s => s != null);
-  const avg = (key) => {
+  const totalClients = subs.length;
+  // For each sub-score: average across clients-with-data, plus the count
+  // of clients that contributed (so the breakdown surfaces "this 86% is
+  // from only 1 of 55 clients" — Bobby's transparency request).
+  const avgWithCount = (key) => {
     const vals = subs.map(s => s[key]).filter(v => v != null && Number.isFinite(v));
-    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    return {
+      raw: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0,
+      count: vals.length,
+    };
+  };
+  // Gated value applies bookCompleteness like the Performance bucket does.
+  // This way the per-sub-score number reflects what actually contributes
+  // to the bucket, not just "average of those who reported."
+  const gate = score.bookCompleteness != null && Number.isFinite(score.bookCompleteness)
+    ? score.bookCompleteness : 0;
+  const sub = (key, label) => {
+    const r = avgWithCount(key);
+    return [key, label, r.raw * gate, { raw: r.raw, count: r.count, total: totalClients, gated: true }];
   };
   const groups = [
     { key: 'performance', label: 'Performance', total: score.performance, items: [
-      ['mrrGrowth',  'MRR Growth',     avg('mrrGrowth')],
-      ['leadCost',   'Lead Cost',      avg('leadCost')],
-      ['adSpend',    'Ad Spend',       avg('adSpend')],
-      ['funnel',     'Funnel',         avg('funnel')],
-      ['attrition',  'Attrition',      avg('attrition')],
+      sub('mrrGrowth', 'MRR Growth'),
+      sub('leadCost',  'Lead Cost'),
+      sub('adSpend',   'Ad Spend'),
+      sub('funnel',    'Funnel'),
+      sub('attrition', 'Attrition'),
     ]},
     { key: 'retention', label: 'Retention', total: score.retention, items: [
-      ['retention',  'Retention rate', score.retention],
+      ['retention',  'Retention rate', score.retention,
+        { raw: score.retention, count: score.eligibleAtQuarterStart || 0,
+          total: score.eligibleAtQuarterStart || 0, gated: false,
+          note: score.cancelledThisQuarter != null
+            ? `${score.cancelledThisQuarter} of ${score.eligibleAtQuarterStart || 0} cancelled this quarter`
+            : null }],
     ]},
     { key: 'growth', label: 'Growth', total: score.growth, items: [
-      ['growth',     'Growth points',  score.growth],
+      ['growth',     'Growth points', score.growth,
+        { raw: score.growth, count: score.growthEligibleCount || 0,
+          total: score.growthEligibleCount || 0, gated: false,
+          note: 'Points earned ÷ (8 × eligible 90+day clients)' }],
     ]},
   ];
 
@@ -213,8 +237,9 @@ function BucketBreakdown({ score, state, theme }) {
             </button>
             {isOpen && (
               <div style={{ padding: '0 16px 14px' }}>
-                {g.items.map(([k, label, val]) => {
+                {g.items.map(([k, label, val, meta]) => {
                   const ss = CABT_scoreToStatus(val);
+                  const m = meta || {};
                   return (
                     <div key={k} style={{ padding: '10px 0', borderTop: `1px solid ${theme.rule}` }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -224,6 +249,19 @@ function BucketBreakdown({ score, state, theme }) {
                       <div style={{ height: 4, background: theme.rule, borderRadius: 2, overflow: 'hidden' }}>
                         <div style={{ width: `${val*100}%`, height: '100%', background: STATUS[ss] }}/>
                       </div>
+                      {/* Data coverage signal — Bobby's "transparency" request:
+                          show that an 86 sub-score from 1/55 clients is not the same as
+                          86 from 55/55 clients. Inline under the bar. */}
+                      {m.gated && m.total > 0 && (
+                        <div style={{ marginTop: 6, fontSize: 11, color: theme.inkMuted, lineHeight: 1.4 }}>
+                          Raw avg <strong style={{ color: theme.ink }}>{(m.raw*100).toFixed(0)}</strong> from <strong style={{ color: theme.ink }}>{m.count}</strong> of <strong style={{ color: theme.ink }}>{m.total}</strong> clients with data · gated by {(gate*100).toFixed(1)}% book completeness → {(val*100).toFixed(0)}
+                        </div>
+                      )}
+                      {!m.gated && m.note && (
+                        <div style={{ marginTop: 6, fontSize: 11, color: theme.inkMuted, lineHeight: 1.4 }}>
+                          {m.note}
+                        </div>
+                      )}
                       {ss === 'red' && (() => {
                         const isWhyOpen = !!whyOpen[k];
                         const info = RED_REASONS[k];
