@@ -148,8 +148,24 @@ function CAHome({ state, ca, theme, density, navigate }) {
         <div style={{ fontFamily: theme.serif, fontSize: 13, opacity: 0.7, letterSpacing: 0.3, marginBottom: 4 }}>
           Hey {ca.name.split(' ')[0]} — Q2 2026
         </div>
-        <div style={{ fontFamily: theme.serif, fontSize: 22, fontWeight: 400, lineHeight: 1.25, letterSpacing: -0.3, marginBottom: 14, maxWidth: 280 }}>
-          You're on track for <em style={{ color: theme.gold, fontStyle: 'normal', fontWeight: 600 }}>{CABT_fmtMoney(projected)}</em> this quarter.
+        <div style={{ fontFamily: theme.serif, fontSize: 22, fontWeight: 400, lineHeight: 1.25, letterSpacing: -0.3, marginBottom: 14, maxWidth: 320 }}>
+          {(() => {
+            // Make the headline truthful when projection = $0. Don't say
+            // "on track for $0" — explain *why* it's $0 (Bobby 2026-05-04).
+            if (projected > 0) {
+              return <>You're on track for <em style={{ color: theme.gold, fontStyle: 'normal', fontWeight: 600 }}>{CABT_fmtMoney(projected)}</em> this quarter.</>;
+            }
+            if (!score.totalPot || score.totalPot <= 0) {
+              return <>Bonus pot for Q2 2026 isn't set yet. Admin → Quarter inputs.</>;
+            }
+            if (!score.mrrShare || score.mrrShare <= 0) {
+              return <>No bonus-eligible MRR on your book yet — log monthly metrics to qualify.</>;
+            }
+            if (!score.composite || score.composite <= 0) {
+              return <>Projected payout: <em style={{ color: theme.gold, fontStyle: 'normal', fontWeight: 600 }}>$0</em> — composite at zero. Log data to lift Performance / Growth.</>;
+            }
+            return <>Projected payout: <em style={{ color: theme.gold, fontStyle: 'normal', fontWeight: 600 }}>$0</em> this quarter.</>;
+          })()}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, position: 'relative', zIndex: 1 }}>
           <ScoreRing
