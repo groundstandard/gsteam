@@ -384,12 +384,38 @@ function App() {
   const syncNow = () => { setPendingSync(0); setIsOffline(false); setTweak('demoOffline', false); showToast('Synced ✓'); };
   const resetData = () => { CABT_resetState(); setState(CABT_loadState()); showToast('Reset to seed'); };
 
+  // Auth role gating (hoisted up so the topbar can use it). Admin/owner/
+  // integrator can switch tabs and pick which CA/sales rep they're viewing
+  // as. Non-admins see ONLY their own data — no role switcher, no user picker.
+  const dbRole = authedProfile?.role || state?.role || null;
+  const isAdminAccount = (authedProfile && ['owner', 'admin', 'integrator'].includes(authedProfile.role))
+    || (state && (state.role === 'owner' || state.role === 'admin' || state.role === 'integrator'));
+  const allowedRoles = (() => {
+    if (!dbRole) return ['CA'];
+    if (dbRole === 'owner' || dbRole === 'admin' || dbRole === 'integrator') return ['CA', 'Sales', 'Admin'];
+    if (dbRole === 'sales') return ['Sales'];
+    return ['CA'];
+  })();
+
+  // For non-admin accounts, lock activeUserId to their OWN CA/sales row so
+  // they can't see (let alone edit) other people's books. Bobby 2026-05-04:
+  // "per account magkaiba ng account si Kurt at iba pa... sa admin lang may ganto."
+  const myCaId    = authedProfile?.caId    || authedProfile?.ca_id    || null;
+  const mySalesId = authedProfile?.salesId || authedProfile?.sales_id || null;
+  React.useEffect(() => {
+    if (isAdminAccount) return; // admins can browse anyone
+    if (role === 'CA' && myCaId && activeUserId !== myCaId) setActiveUserId(myCaId);
+    if (role === 'Sales' && mySalesId && activeUserId !== mySalesId) setActiveUserId(mySalesId);
+  }, [isAdminAccount, role, myCaId, mySalesId, activeUserId]);
+
   // Active user
   const activeCA = state.cas.find(c => c.id === activeUserId);
   const activeRep = state.sales.find(s => s.id === activeUserId);
 
-  // Resolve when role changes
+  // Resolve when role changes — admins fall back to first roster entry if
+  // the active id no longer exists; non-admins are pinned via the effect above.
   React.useEffect(() => {
+    if (!isAdminAccount) return;
     if (role === 'CA' && !state.cas.some(c => c.id === activeUserId)) setActiveUserId('CA-01');
     if (role === 'Sales' && !state.sales.some(s => s.id === activeUserId)) setActiveUserId('AE-01');
     setRoute({ name: 'home', params: {} });
@@ -578,7 +604,10 @@ function App() {
             )}
             {titleFor(route)}
           </div>
-          {role === 'CA' && (
+          {/* User picker — ONLY admins can switch which CA / sales rep
+              they're viewing as. Non-admins see their own data only.
+              Bobby 2026-05-04. */}
+          {isAdminAccount && role === 'CA' && (
             <UserPicker
               value={activeUserId}
               onChange={setActiveUserId}
@@ -586,7 +615,7 @@ function App() {
               theme={theme}
             />
           )}
-          {role === 'Sales' && (
+          {isAdminAccount && role === 'Sales' && (
             <UserPicker
               value={activeUserId}
               onChange={setActiveUserId}
@@ -892,26 +921,10 @@ function App() {
     window.addEventListener('resize', onR);
     return () => window.removeEventListener('resize', onR);
   }, []);
-  // Desktop admin mode: wide screen + admin role → full-bleed wide layout (no iPhone frame).
-  // Bobby explicitly asked for desktop-friendly admin (2026-04-29).
+  // Desktop admin mode: wide screen + admin role → full-bleed wide layout
+  // (no iPhone frame). isAdminAccount + allowedRoles are hoisted above
+  // (see the auth-role gating block).
   const isDesktop = vw >= 1100;
-  // Admin-account detection — applies the desktop layout (sidebar nav,
-  // full-screen content, no iPhone frame) for ANY tab the admin views,
-  // not only when they're on the Admin tab. So an admin browsing as CA
-  // or Sales still gets the desktop console treatment.
-  const isAdminAccount = (authedProfile && ['owner', 'admin', 'integrator'].includes(authedProfile.role))
-    || (state && (state.role === 'owner' || state.role === 'admin' || state.role === 'integrator'));
-
-  // Bobby 2026-05-04: each role sees only its own tab(s). Admin sees all 3.
-  // Internal `role` values stay 'CA' | 'Sales' | 'Admin' (used everywhere
-  // downstream); only what the role-switcher renders is gated.
-  const dbRole = authedProfile?.role || state?.role || null;
-  const allowedRoles = (() => {
-    if (!dbRole) return ['CA']; // pre-auth fallback
-    if (dbRole === 'owner' || dbRole === 'admin' || dbRole === 'integrator') return ['CA', 'Sales', 'Admin'];
-    if (dbRole === 'sales') return ['Sales'];
-    return ['CA']; // ca + anything else
-  })();
 
   // Hard guard: if the current `role` state isn't in allowedRoles (e.g., URL
   // forced it, or stale state from before role gating), snap it back.
