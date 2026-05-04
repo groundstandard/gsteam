@@ -41,6 +41,85 @@ function caQuarterComposite(ca, state, qStart, qEnd, status) {
   };
 }
 
+// Per-quarter pot inputs (agency_gross_last_month + pot_pct). Owner enters
+// these at quarter close so the bonus pot reflects real revenue, not a
+// hardcoded cap. Module-scope for stable input focus.
+function QuarterInputsCard({ theme, state, qs }) {
+  const currentQ = qs.find(q => q.status === 'current') || qs[0];
+  const allQI = state.allQuarterInputs || [];
+  const existing = allQI.find(q => q.quarterStart === currentQ.start);
+  const [editing, setEditing] = React.useState(false);
+  const [agencyGross, setAgencyGross] = React.useState(existing ? String(existing.agencyGrossLastMonth) : '');
+  const [potPct, setPotPct] = React.useState(existing ? String(existing.potPct) : '0.005');
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState(null);
+
+  React.useEffect(() => {
+    setAgencyGross(existing ? String(existing.agencyGrossLastMonth) : '');
+    setPotPct(existing ? String(existing.potPct) : '0.005');
+  }, [currentQ.start, existing && existing.agencyGrossLastMonth, existing && existing.potPct]);
+
+  const save = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const sb = await CABT_sb();
+      const { error } = await sb.from('quarter_inputs').upsert({
+        quarter_start: currentQ.start,
+        agency_gross_last_month: Number(agencyGross) || 0,
+        pot_pct: Number(potPct) || 0,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'quarter_start' });
+      if (error) throw error;
+      setEditing(false);
+    } catch (e) {
+      setErr(e?.message || 'Save failed');
+    }
+    setBusy(false);
+  };
+
+  const totalPot = (Number(agencyGross) || 0) * (Number(potPct) || 0);
+
+  return (
+    <Card theme={theme} padding={14}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div>
+          <SectionLabel theme={theme}>Quarter inputs · {currentQ.label}</SectionLabel>
+          {!editing && (
+            <div style={{ fontSize: 12, color: theme.inkMuted, marginTop: 2 }}>
+              {existing
+                ? <>Total pot: <strong style={{ color: theme.ink }}>{CABT_fmtMoney(totalPot)}</strong> ({CABT_fmtMoney(Number(agencyGross))} × {(Number(potPct)*100).toFixed(2)}%)</>
+                : <span style={{ color: '#dc3c3c' }}>Not set yet — payouts display $0 until you set this.</span>}
+            </div>
+          )}
+        </div>
+        {!editing && (
+          <Button theme={theme} variant="secondary" size="sm" onClick={() => setEditing(true)}>
+            {existing ? 'Edit' : 'Set'}
+          </Button>
+        )}
+      </div>
+      {editing && (
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Field label="Agency gross — last month of previous quarter" hint="Total agency gross revenue from the last month of the quarter before this one." theme={theme}>
+            <Input type="number" inputmode="decimal" prefix="$" value={agencyGross} onChange={setAgencyGross} placeholder="e.g. 100000" theme={theme}/>
+          </Field>
+          <Field label="Pot percentage" hint="Fraction of agency gross that becomes the bonus pot. 0.005 = 0.5%." theme={theme}>
+            <Input type="number" inputmode="decimal" value={potPct} onChange={setPotPct} placeholder="0.005" theme={theme}/>
+          </Field>
+          <div style={{ fontSize: 12, color: theme.inkMuted }}>
+            Total pot preview: <strong style={{ color: theme.ink }}>{CABT_fmtMoney(totalPot)}</strong>
+          </div>
+          {err && <div style={{ color: '#dc3c3c', fontSize: 12 }}>{err}</div>}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button theme={theme} variant="primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</Button>
+            <Button theme={theme} variant="secondary" disabled={busy} onClick={() => setEditing(false)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ── Annual Bonus ───────────────────────────────────────────────────────────
 function AdminAnnualBonus({ state, theme }) {
   const today = new Date();
@@ -88,6 +167,9 @@ function AdminAnnualBonus({ state, theme }) {
           {hasFuture && <span style={{ marginLeft: 8, color: theme.inkMuted }}>· future quarters excluded until they begin</span>}
         </div>
       </Card>
+
+      <QuarterInputsCard theme={theme} state={state} qs={qs} />
+
 
       {isDesktop ? (
         // ── Desktop: table layout (Bobby's preference) ───────────────────
@@ -562,6 +644,58 @@ function AdminClientCalc({ state, theme, clientId, navigate, onSetCadence, onSet
                             onSave={(p) => onSetRates(c.id, p)} />;
         })()}
 
+        {onSetRates && (() => {
+          // Tier + cancel reason controls — bundled here because both
+          // require the same onUpdateClient handler (we reuse onSetRates).
+          const tier = c.tier || 'standard';
+          const eligible = tier === 'standard' || tier === 'vip';
+          const cancelReasons = state.cancelReasons || [];
+          return (
+            <Card theme={theme} padding={14}>
+              <SectionLabel theme={theme}>Tier &amp; status</SectionLabel>
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 6 }}>Tier</div>
+                <Select
+                  value={tier}
+                  onChange={(v) => onSetRates(c.id, { tier: v })}
+                  options={[
+                    { value: 'standard',   label: 'Standard — eligible' },
+                    { value: 'vip',        label: 'VIP — eligible (+1 Growth point)' },
+                    { value: 'reach',      label: 'Reach — excluded from scoring' },
+                    { value: 'a_la_carte', label: 'À la carte — excluded from scoring' },
+                  ]}
+                  theme={theme}
+                />
+                <div style={{ fontSize: 11, color: eligible ? theme.inkMuted : '#dc3c3c', marginTop: 6, lineHeight: 1.4 }}>
+                  {eligible
+                    ? 'Counts toward CA bonus scoring (Performance, Retention, Growth).'
+                    : 'Excluded from CA scoring — tracked for revenue only.'}
+                </div>
+              </div>
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 6 }}>Cancel reason</div>
+                <Select
+                  value={c.cancelReason || ''}
+                  onChange={(v) => onSetRates(c.id, { cancelReason: v || null })}
+                  options={[
+                    { value: '', label: '— not cancelled —' },
+                    ...cancelReasons.map(r => ({
+                      value: r.code,
+                      label: `${r.label}${r.countsAgainstCa ? '' : ' (does not count against CA)'}`,
+                    })),
+                  ]}
+                  theme={theme}
+                />
+                <div style={{ fontSize: 11, color: theme.inkMuted, marginTop: 6, lineHeight: 1.4 }}>
+                  {c.cancelDate
+                    ? `Cancelled ${CABT_fmtDate(c.cancelDate)}. Reason controls whether this hurts the CA's retention score.`
+                    : 'Set this only when the client cancels. Reasons flagged "does not count against CA" (e.g. business closed) are excluded from retention math.'}
+                </div>
+              </div>
+            </Card>
+          );
+        })()}
+
         {onSetCadence && (() => {
           const cadence = c.loggingCadence || 'monthly';
           const wc = (state.weeklyCheckins  || []).filter(w => w.clientId === c.id).sort((a,b) => b.weekStart.localeCompare(a.weekStart));
@@ -919,6 +1053,7 @@ function AdminAddClient({ state, theme, navigate, onSubmit, presetFromStripe }) 
     membershipStartDate: '',
     stripeTruthMode:     'stripe_wins', // stripe_wins | ca_wins | lower_of_both
     loggingCadence:      'monthly',     // weekly | monthly (TICKET-2)
+    tier:                'standard',    // standard | vip | reach | a_la_carte (Phase 10)
     notes:               '',
   }));
   const [errors, setErrors] = React.useState({});
@@ -985,6 +1120,7 @@ function AdminAddClient({ state, theme, navigate, onSubmit, presetFromStripe }) 
       endPct:           Number(form.endPct),
       stripeTruthMode:  form.stripeTruthMode,
       loggingCadence:   form.loggingCadence,
+      tier:             form.tier,
       notes:            form.notes,
     };
 
@@ -1043,6 +1179,16 @@ function AdminAddClient({ state, theme, navigate, onSubmit, presetFromStripe }) 
             options={[
               { value: 'monthly', label: 'Monthly — one check-in per month' },
               { value: 'weekly',  label: 'Weekly — check-in every week' },
+            ]} theme={theme}/>
+        </Field>
+        <div style={{ height: 10 }}/>
+        <Field label="Tier" hint="Bonus eligibility. Only Standard + VIP count toward CA scoring. Reach + à la carte are tracked but excluded." theme={theme}>
+          <Select value={form.tier} onChange={(v) => setForm({ ...form, tier: v })}
+            options={[
+              { value: 'standard',   label: 'Standard — eligible' },
+              { value: 'vip',        label: 'VIP — eligible (+1 Growth point)' },
+              { value: 'reach',      label: 'Reach — excluded from scoring' },
+              { value: 'a_la_carte', label: 'À la carte — excluded from scoring' },
             ]} theme={theme}/>
         </Field>
       </Card>
