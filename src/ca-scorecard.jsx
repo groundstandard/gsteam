@@ -251,8 +251,16 @@ function BucketBreakdown({ score, state, theme }) {
                       </div>
                       {/* Data coverage signal — Bobby's "transparency" request:
                           show that an 86 sub-score from 1/55 clients is not the same as
-                          86 from 55/55 clients. Inline under the bar. */}
-                      {m.gated && m.total > 0 && (
+                          86 from 55/55 clients. Inline under the bar.
+                          When count = 0 (nobody has data for this sub-score), render
+                          "—" instead of "raw 0" so it's clear that's "no data" not
+                          "everyone scored zero" (Bobby 2026-05-04). */}
+                      {m.gated && m.total > 0 && m.count === 0 && (
+                        <div style={{ marginTop: 6, fontSize: 11, color: theme.inkMuted, lineHeight: 1.4 }}>
+                          No data yet — <strong style={{ color: theme.ink }}>0</strong> of <strong style={{ color: theme.ink }}>{m.total}</strong> clients with data this quarter · sub-score skipped, not penalized.
+                        </div>
+                      )}
+                      {m.gated && m.total > 0 && m.count > 0 && (
                         <div style={{ marginTop: 6, fontSize: 11, color: theme.inkMuted, lineHeight: 1.4 }}>
                           Raw avg <strong style={{ color: theme.ink }}>{(m.raw*100).toFixed(0)}</strong> from <strong style={{ color: theme.ink }}>{m.count}</strong> of <strong style={{ color: theme.ink }}>{m.total}</strong> clients with data · gated by {(gate*100).toFixed(1)}% book completeness → {(val*100).toFixed(0)}
                         </div>
