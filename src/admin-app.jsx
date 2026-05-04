@@ -681,16 +681,35 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
     if (e && e.preventDefault) e.preventDefault();
     setErrMsg(null);
     if (resolvingId) return setErrMsg('Looking up teammate… try again in a moment.');
-    if (!userId) return setErrMsg(`No auth account is linked to ${row.email || 'this teammate'}. Have them sign in once first, or re-invite them.`);
     if (newPassword.length < 8) return setErrMsg('Password must be at least 8 characters.');
     if (newPassword !== confirmPassword) return setErrMsg('Passwords don\'t match.');
     setSubmitting(true);
     try {
-      await CABT_editUser({ action: 'reset_password', userId, newPassword });
-      onSuccess('Password reset for ' + (row.name || 'teammate'));
+      if (userId) {
+        // Existing auth account → reset their password.
+        await CABT_editUser({ action: 'reset_password', userId, newPassword });
+        onSuccess('Password reset for ' + (row.name || 'teammate'));
+      } else {
+        // No auth account yet (teammate was added to the roster but never
+        // invited / signed in). Treat "Set new password" as "create the
+        // account with this password" so they can sign in immediately.
+        // Bobby 2026-05-04: previously this errored out, leaving Kurt locked.
+        const dbRole = isCa ? 'ca' : 'sales';
+        const salesRole = isSales ? (row.role || null) : null;
+        await CABT_inviteUser({
+          email:       row.email,
+          displayName: row.name || row.email,
+          role:        dbRole,
+          password:    newPassword,
+          caId:        isCa    ? row.id : null,
+          salesRole,
+          salesId:     isSales ? row.id : null,
+        });
+        onSuccess('Account created for ' + (row.name || 'teammate'));
+      }
     } catch (err) {
       const code = err && err.message;
-      setErrMsg(EDIT_ERROR_COPY[code] || (err.detail ? `${code}: ${err.detail}` : code) || 'Reset failed.');
+      setErrMsg(EDIT_ERROR_COPY[code] || (err.detail ? `${code}: ${err.detail}` : code) || 'Failed.');
       setSubmitting(false);
     }
   };
@@ -745,7 +764,9 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
             fontFamily: theme.serif || 'inherit',
             fontSize: isDesktop ? 26 : 22, fontWeight: 600, color: theme.ink, letterSpacing: -0.3,
           }}>
-            {mode === 'reset' ? 'Reset password' : 'Edit teammate'}
+            {mode === 'reset'
+              ? (userId ? 'Reset password' : 'Set initial password')
+              : 'Edit teammate'}
           </div>
           <button
             onClick={onClose}
@@ -851,7 +872,7 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
 
             <div style={{ height: 1, background: theme.rule, margin: '6px 0 2px' }}/>
             <Button theme={theme} variant="secondary" onClick={() => { setErrMsg(null); setMode('reset'); }}>
-              Reset password…
+              {userId ? 'Reset password…' : 'Set initial password…'}
             </Button>
 
             {errMsg && (
@@ -881,7 +902,9 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
         {mode === 'reset' && (
           <form onSubmit={submitReset} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ fontSize: 13, color: theme.inkSoft, lineHeight: 1.5 }}>
-              Set a new temporary password for <strong>{row.name}</strong>. They'll need it to sign in next time. Share it with them out-of-band — it's not emailed.
+              {userId
+                ? <>Set a new temporary password for <strong>{row.name}</strong>. They'll need it to sign in next time. Share it with them out-of-band — it's not emailed.</>
+                : <><strong>{row.name}</strong> hasn't signed in yet. Setting a password here <strong>creates their account</strong> so they can sign in immediately. Share the password with them out-of-band — it's not emailed.</>}
             </div>
             <Field label="New password" required hint="Min 8 chars." theme={theme}>
               <Input value={newPassword} onChange={setNewPassword} type="password" placeholder="••••••••" theme={theme} autoFocus/>
@@ -902,7 +925,9 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
                 Back
               </Button>
               <Button theme={theme} variant="primary" fullWidth type="submit" disabled={submitting} onClick={submitReset}>
-                {submitting ? 'Resetting…' : 'Set new password'}
+                {submitting
+                  ? (userId ? 'Resetting…' : 'Creating…')
+                  : (userId ? 'Set new password' : 'Create account & set password')}
               </Button>
             </div>
           </form>
