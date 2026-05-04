@@ -26,18 +26,19 @@ function quarterStatus(qStart, qEnd, today = new Date()) {
   return 'current';
 }
 
-// Synthesize a per-quarter composite for a CA from their existing book.
-// Demo math: vary the live composite slightly per quarter so the table tells a story.
-// Returns null payout/composite for future quarters — data does not exist yet.
+// Per-quarter composite for a CA. Calls the real scoring engine for the
+// quarter window and uses the MRR-weighted pot from quarter_inputs.
+// 2026-05-04: removed the demo "wobble" that varied composites by ±8pts
+// and the hardcoded $7,500 payout cap. Numbers now reflect reality.
 function caQuarterComposite(ca, state, qStart, qEnd, status) {
   if (status === 'future') return { composite: null, payout: null, status };
   const qConfig = { ...state.config, quarterStart: qStart, quarterEnd: qEnd };
   const score = CABT_caScorecard(ca, { ...state, config: qConfig });
-  // Add small deterministic variation per quarter so historical quarters differ.
-  const seed = (ca.id + qStart).split('').reduce((s, c) => s + c.charCodeAt(0), 0);
-  const wobble = ((seed % 17) - 8) / 100; // -0.08..+0.08
-  const composite = CABT_clamp((score.composite || 0) + wobble, 0, 1);
-  return { composite, payout: Math.round(composite * 7500), status };
+  return {
+    composite: score.composite || 0,
+    payout: score.finalPayout || 0,
+    status,
+  };
 }
 
 // ── Annual Bonus ───────────────────────────────────────────────────────────
@@ -206,7 +207,7 @@ function AdminAnnualBonus({ state, theme }) {
       )}
 
       <div style={{ fontSize: 12, color: theme.inkMuted, padding: '0 4px', lineHeight: 1.5 }}>
-        Annual payout = sum of <strong>past + current</strong> quarterly composites × $7,500 cap. Quarterly figures use the same scoring engine the CA sees on their scorecard. Current quarter shows pace-to-date (italic). Future quarters render "—" until they begin.
+        Quarterly payout = (CA's eligible-MRR ÷ all eligible-MRR) × Total Pot × Composite. Total Pot = previous quarter's last month agency gross × pot %, set in Admin → Quarter Inputs. Past quarters show actual; current quarter shows pace-to-date (italic); future quarters render "—" until they begin.
       </div>
     </div>
   );

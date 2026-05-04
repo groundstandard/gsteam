@@ -168,21 +168,29 @@ const RED_REASONS = {
 function BucketBreakdown({ score, state, theme }) {
   const [expanded, setExpanded] = React.useState({ performance: true, retention: false, growth: false });
   const [whyOpen, setWhyOpen] = React.useState({}); // keyed by sub-score key
-  // Aggregate sub-scores across CA's clients
-  const subs = score.clients.map(c => c.sub).filter(s => s.composite != null);
-  const avg = (key) => subs.length ? subs.reduce((s, sb) => s + (sb[key] || 0), 0) / subs.length : 0;
+  // Aggregate sub-scores across CA's clients (skip clients with no data, per spec).
+  // 2026-05-04 update: breakdown now shows the 5 spec Performance sub-scores
+  // (MRR Growth, Lead Cost, Ad Spend, Funnel, Attrition) instead of the old
+  // 3 (Revenue, Ad efficiency, Funnel). Retention shows the real retention
+  // rate; Growth shows points earned vs max.
+  const subs = score.clients.map(c => c.sub).filter(s => s != null);
+  const avg = (key) => {
+    const vals = subs.map(s => s[key]).filter(v => v != null && Number.isFinite(v));
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  };
   const groups = [
     { key: 'performance', label: 'Performance', total: score.performance, items: [
-      ['revenue',      'Revenue',         avg('revenue')],
-      ['adEfficiency', 'Ad efficiency',   avg('adEfficiency')],
-      ['funnel',       'Funnel',          avg('funnel')],
+      ['mrrGrowth',  'MRR Growth',     avg('mrrGrowth')],
+      ['leadCost',   'Lead Cost',      avg('leadCost')],
+      ['adSpend',    'Ad Spend',       avg('adSpend')],
+      ['funnel',     'Funnel',         avg('funnel')],
+      ['attrition',  'Attrition',      avg('attrition')],
     ]},
     { key: 'retention', label: 'Retention', total: score.retention, items: [
-      ['attrition',    'Attrition',       avg('attrition')],
-      ['satisfaction', 'Satisfaction',    avg('satisfaction')],
+      ['retention',  'Retention rate', score.retention],
     ]},
     { key: 'growth', label: 'Growth', total: score.growth, items: [
-      ['growth',       'MRR trajectory',  avg('growth')],
+      ['growth',     'Growth points',  score.growth],
     ]},
   ];
 
