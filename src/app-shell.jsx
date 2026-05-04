@@ -683,7 +683,7 @@ function App() {
       {/* Admin-account users get a sidebar nav on desktop (≥1100px) for ALL
          tabs they view — CA, Sales, Admin. Mobile users + non-admin accounts
          still get the floating island tab bar. */}
-      {(!isPhone && isAdminAccount && vw >= 1100) ? (
+      {(!isPhone && vw >= 1100) ? (
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
           {/* Left sidebar nav — desktop admin only */}
           <nav style={{
@@ -781,7 +781,7 @@ function App() {
          Inner highlight at top + drop shadow + accent-tinted glow.
          Position fixed on real mobile / desktop, absolute inside iOS frame.
          Hidden when desktop-admin sidebar nav is active. */}
-      {!(!isPhone && isAdminAccount && vw >= 1100) && (
+      {!(!isPhone && vw >= 1100) && (
       <div style={{
         position: isPhone ? 'absolute' : 'fixed',
         left: 12, right: 12,
@@ -933,8 +933,12 @@ function App() {
       setRole(allowedRoles[0]);
     }
   }, [allowedRoles.join(','), role]);
-  const isDesktopAdmin = isDesktop && isAdminAccount;
-  const useFrame = t.showFrame && vw >= 720 && !isDesktopAdmin;
+  // Bobby 2026-05-04: desktop layout (sidebar nav, full-bleed content,
+  // no iPhone frame) is now available to ALL roles on a wide screen, not
+  // just admins. Keep the variable name for readability but drop the role
+  // gate. CA / Sales users on a >=1100px monitor get the same console UX.
+  const isDesktopWide = isDesktop;
+  const useFrame = t.showFrame && vw >= 720 && !isDesktopWide;
   const isTablet = vw >= 720 && vw < 1100;
 
   // No internet on initial open → show dedicated offline screen IMMEDIATELY.
@@ -1012,7 +1016,7 @@ function App() {
         <IOSDevice width={402} height={874} dark={t.theme === 'athletic'}>
           <Body width={402} height={874} isPhone={true}/>
         </IOSDevice>
-      ) : isDesktopAdmin ? (
+      ) : isDesktopWide ? (
         <div style={{
           width: '100%', height: '100dvh', maxHeight: '100dvh',
         }}>
