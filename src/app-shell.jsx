@@ -561,7 +561,7 @@ function App() {
               setTweak({ theme: next, accentColor: THEMES[next].accent });
             }}
           />
-          <RoleSwitcher role={role} onChange={setRole} theme={theme}/>
+          <RoleSwitcher role={role} onChange={setRole} theme={theme} allowedRoles={allowedRoles}/>
           {/* Sign out lives in role-specific menus (CA → Me, Admin → More).
              No global top-bar button — keeps the header tidy. */}
         </div>
@@ -669,7 +669,7 @@ function App() {
               fontSize: 10, fontWeight: 700, color: theme.inkMuted,
               letterSpacing: 1, textTransform: 'uppercase',
               padding: '0 12px 8px',
-            }}>{role === 'CA' ? 'Client Associate' : role === 'Sales' ? 'Sales' : 'Admin'}</div>
+            }}>{role === 'CA' ? 'Accounts' : role === 'Sales' ? 'Sales' : 'Admin'}</div>
             {tabs.map(tb => {
               const active = route.name === tb.name
                 || (tb.name === 'log-picker' && (route.name === 'log-metrics' || route.name === 'log-event' || route.name === 'log-survey' || route.name === 'log-checkin'));
@@ -901,6 +901,25 @@ function App() {
   // or Sales still gets the desktop console treatment.
   const isAdminAccount = (authedProfile && ['owner', 'admin', 'integrator'].includes(authedProfile.role))
     || (state && (state.role === 'owner' || state.role === 'admin' || state.role === 'integrator'));
+
+  // Bobby 2026-05-04: each role sees only its own tab(s). Admin sees all 3.
+  // Internal `role` values stay 'CA' | 'Sales' | 'Admin' (used everywhere
+  // downstream); only what the role-switcher renders is gated.
+  const dbRole = authedProfile?.role || state?.role || null;
+  const allowedRoles = (() => {
+    if (!dbRole) return ['CA']; // pre-auth fallback
+    if (dbRole === 'owner' || dbRole === 'admin' || dbRole === 'integrator') return ['CA', 'Sales', 'Admin'];
+    if (dbRole === 'sales') return ['Sales'];
+    return ['CA']; // ca + anything else
+  })();
+
+  // Hard guard: if the current `role` state isn't in allowedRoles (e.g., URL
+  // forced it, or stale state from before role gating), snap it back.
+  React.useEffect(() => {
+    if (allowedRoles.length && !allowedRoles.includes(role)) {
+      setRole(allowedRoles[0]);
+    }
+  }, [allowedRoles.join(','), role]);
   const isDesktopAdmin = isDesktop && isAdminAccount;
   const useFrame = t.showFrame && vw >= 720 && !isDesktopAdmin;
   const isTablet = vw >= 720 && vw < 1100;
@@ -1216,16 +1235,35 @@ function ThemeToggle({ isDark, theme, onToggle }) {
   );
 }
 
-function RoleSwitcher({ role, onChange, theme }) {
+// Role switcher labels — internal role values stay 'CA' | 'Sales' | 'Admin'
+// (used everywhere downstream); only the on-screen pill text changes.
+// Bobby 2026-05-04: rename "CA" → "Accounts".
+const ROLE_LABEL = { CA: 'Accounts', Sales: 'Sales', Admin: 'Admin' };
+
+function RoleSwitcher({ role, onChange, theme, allowedRoles }) {
+  const roles = allowedRoles && allowedRoles.length ? allowedRoles : ['CA', 'Sales', 'Admin'];
+  // If only one tab is allowed, render a static pill — no clickable switcher.
+  // Prevents non-admins from even seeing the pretense of choice.
+  if (roles.length === 1) {
+    return (
+      <div style={{
+        display: 'inline-flex', alignItems: 'center',
+        background: theme.surface, borderRadius: 999, padding: '5px 12px',
+        border: `1px solid ${theme.rule}`,
+        fontSize: 11, fontWeight: 700, color: theme.ink, fontFamily: 'inherit',
+        letterSpacing: 0.2,
+      }}>{ROLE_LABEL[roles[0]] || roles[0]}</div>
+    );
+  }
   return (
     <div style={{ display: 'flex', background: theme.rule, borderRadius: 999, padding: 2, gap: 0 }}>
-      {['CA', 'Sales', 'Admin'].map(r => (
+      {roles.map(r => (
         <button key={r} onClick={() => onChange(r)} style={{
           padding: '5px 10px', fontSize: 11, fontWeight: 700, border: 'none', borderRadius: 999,
           background: role === r ? theme.surface : 'transparent',
           color: role === r ? theme.ink : theme.inkMuted,
           cursor: 'pointer', fontFamily: 'inherit', boxShadow: role === r ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
-        }}>{r}</button>
+        }}>{ROLE_LABEL[r] || r}</button>
       ))}
     </div>
   );
