@@ -148,44 +148,125 @@ function cancelCountsAgainstCA(client, cancelReasonsByCode) {
   return reason.countsAgainstCa !== false;
 }
 
+// ── Weekly→Monthly rollup helper (mirror of v_monthly_metrics_effective) ───
+// Aggregation rules per field:
+//   Snapshot (state at a point in time): clientMRR, totalStudentsStart,
+//     clientGrossRevenue → take LATEST week within month
+//   Flow (events during a period): adSpend, leadsGenerated, apptsBooked,
+//     leadsShowed, leadsSigned, studentsCancelled, studentsAcquired → SUM
+//   Derived: leadCost = SUM(adSpend) / SUM(leadsGenerated)
+function rollUpWeeklyToMonthly(weeklyMetrics, clientId) {
+  const rows = (weeklyMetrics || []).filter(w => w && w.clientId === clientId && w.weekStart);
+  if (rows.length === 0) return [];
+  const byMonth = new Map();
+  for (const r of rows) {
+    const month = r.weekStart.slice(0, 7) + '-01';
+    if (!byMonth.has(month)) byMonth.set(month, []);
+    byMonth.get(month).push(r);
+  }
+  return Array.from(byMonth.entries()).map(([month, weeks]) => {
+    const sorted = [...weeks].sort((a, b) => (a.weekStart || '').localeCompare(b.weekStart || ''));
+    const latest = sorted[sorted.length - 1];
+    const sum = (k) => weeks.reduce((s, r) => s + _n(r[k]), 0);
+    const sumLeads  = sum('leadsGenerated');
+    const sumSpend  = sum('adSpend');
+    return {
+      id: `WMR-${clientId}-${month.slice(0, 7)}`,
+      caId: latest.caId,
+      clientId,
+      month,
+      adSpend: sumSpend,
+      leadsGenerated:    sumLeads,
+      apptsBooked:       sum('apptsBooked'),
+      leadsShowed:       sum('leadsShowed'),
+      leadsSigned:       sum('leadsSigned'),
+      studentsAcquired:  sum('studentsAcquired'),
+      studentsCancelled: sum('studentsCancelled'),
+      clientMRR:           _n(latest.clientMRR),
+      caLoggedMRR:         latest.caLoggedMRR,
+      stripeObservedMRR:   latest.stripeObservedMRR,
+      clientGrossRevenue:  _n(latest.clientGrossRevenue),
+      totalStudentsStart:  _n(latest.totalStudentsStart),
+      leadCost: sumLeads > 0 ? sumSpend / sumLeads : 0,
+      source: 'weekly_rolled',
+      _weekCount: weeks.length,
+    };
+  });
+}
+
+// Build effective monthly metrics for a client by merging weekly rollups
+// (preferred when present for a month) with direct monthly_metrics entries
+// (fallback for months without any weekly data).
+function effectiveMonthlyMetrics(monthlyMetrics, weeklyMetrics, clientId) {
+  const rolled = rollUpWeeklyToMonthly(weeklyMetrics, clientId);
+  const rolledMonths = new Set(rolled.map(r => r.month));
+  const monthlyOnly = (monthlyMetrics || [])
+    .filter(m => m && m.clientId === clientId && !rolledMonths.has(m.month));
+  return [...rolled, ...monthlyOnly]
+    .sort((a, b) => (a.month || '').localeCompare(b.month || ''));
+}
+
+// Default quarter window helpers — used when config doesn't specify one.
+function defaultQuarterWindow(today = new Date()) {
+  const y = today.getFullYear();
+  const qIdx = Math.floor(today.getMonth() / 3);
+  const startMonth = qIdx * 3;
+  const start = new Date(y, startMonth, 1);
+  const end = new Date(y, startMonth + 3, 0); // last day of quarter
+  const iso = (d) => d.toISOString().slice(0, 10);
+  return { start: iso(start), end: iso(end) };
+}
+
 // ── Per-client Performance sub-scores ─────────────────────────────────────
 // Returns { mrrGrowth, leadCost, adSpend, funnel, attrition, satisfaction,
 //          performance, ... legacy compat fields ... }
 //
-// All sub-scores are null when there's no data to score them. 90-day
-// grace overrides empties to 1.0 for adSpend / funnel / attrition only.
-function clientSubScores(client, metrics, surveys, config, today = new Date()) {
+// Sub-scores 2-5 aggregate over the QUARTER window (3 months together) per
+// Bobby 2026-05-05. Weekly entries roll up to monthly first via
+// effectiveMonthlyMetrics so weekly cadence clients participate transparently.
+function clientSubScores(client, metrics, surveys, config, today = new Date(), weeklyMetrics = []) {
   const cfg = config || {};
-  const cMetrics = (metrics || [])
-    .filter(m => m.clientId === client.id)
-    .sort((a, b) => (a.month || '').localeCompare(b.month || ''));
-  const recent = cMetrics.slice(-3);
-  const last = recent.length ? recent[recent.length - 1] : null;
+  // Effective: weekly rollups + monthly fallback. Sorted ascending by month.
+  const cMetrics = effectiveMonthlyMetrics(metrics, weeklyMetrics, client.id);
+
+  // Quarter window. Defaults to the calendar quarter containing `today` so
+  // empty config doesn't silently zero everything.
+  const dq = defaultQuarterWindow(today);
+  const qStartIso = cfgGet(cfg, 'quarterStart', dq.start);
+  const qEndIso   = cfgGet(cfg, 'quarterEnd',   dq.end);
+
+  // Just the rows that fall inside the quarter (used for all 5 sub-scores)
+  const inQuarter = cMetrics.filter(m =>
+    m.month && m.month >= qStartIso && m.month <= qEndIso
+  );
+  const qFirst = inQuarter[0] || null;
+  const qLast  = inQuarter[inQuarter.length - 1] || null;
+  const sumQ = (k) => inQuarter.reduce((s, r) => s + _n(r[k]), 0);
 
   const inGrace = clientAgeDays(client, today) < _n(cfgGet(cfg, 'gracePeriodDays', 90));
 
   // ── Sub-score 1: MRR Growth ─────────────────────────────────────────────
   // Linear: $0 → 0; fullCreditMrrGrowth → 1.0. Negative floors at 0.
-  // Quarter-over-quarter: last MRR vs first MRR in the recent window.
+  // First-month MRR vs last-month MRR within the quarter window.
   // GRACE PERIOD POLICY (revised 2026-05-04 per Bobby): clients <90 days
-  // return NULL on perf sub-scores (skipped from average), not 1.0. Original
-  // spec auto-1.0 inflated CA scores when most clients were new — Bobby's
-  // intuition "no data = not green" wins. Grace clients still don't penalize.
+  // return NULL on perf sub-scores (skipped from average), not 1.0.
   let mrrGrowth = null;
-  if (recent.length >= 2) {
-    const firstMRR = _n(recent[0].clientMRR);
-    const lastMRR  = _n(recent[recent.length - 1].clientMRR);
+  if (inQuarter.length >= 2 && qFirst && qLast) {
+    const firstMRR = _n(qFirst.clientMRR);
+    const lastMRR  = _n(qLast.clientMRR);
     const delta = lastMRR - firstMRR;
     const target = _n(cfgGet(cfg, 'fullCreditMrrGrowth', 750));
     mrrGrowth = clamp(delta / Math.max(target, 1), 0, 1);
   }
-  // (no else: in-grace + no data = null, skipped from CA average)
 
-  // ── Sub-score 2: Lead Cost (stepped) ────────────────────────────────────
+  // ── Sub-score 2: Lead Cost (stepped, quarterly) ─────────────────────────
+  // SUM(adSpend) / SUM(leadsGenerated) across the quarter, then stepped.
+  const qAdSpend = sumQ('adSpend');
+  const qLeads   = sumQ('leadsGenerated');
   let leadCost = null;
-  if (last && last.leadCost != null && _n(last.leadCost) > 0) {
-    const lc = _n(last.leadCost);
-    const best = _n(cfgGet(cfg, 'leadCostBest',       5));
+  if (qLeads > 0 && qAdSpend > 0) {
+    const lc = qAdSpend / qLeads;
+    const best  = _n(cfgGet(cfg, 'leadCostBest',       5));
     const great = _n(cfgGet(cfg, 'leadCostGreat',     10));
     const ok    = _n(cfgGet(cfg, 'leadCostAcceptable', 20));
     if      (lc <= best)  leadCost = 1.0;
@@ -193,60 +274,53 @@ function clientSubScores(client, metrics, surveys, config, today = new Date()) {
     else if (lc <= ok)    leadCost = 0.50;
     else                  leadCost = 0;
   }
-  // (in-grace + no data = null)
 
-  // ── Sub-score 3: Ad Spend (target band) ─────────────────────────────────
-  // Target = MAX($1000 floor, pct × Client MRR)
-  // Hits target → 1.0
-  // Over target → up to maxScoreCap (default 2.0 = bonus credit)
-  // Under target → linear 0 → 1.0
+  // ── Sub-score 3: Ad Spend (quarterly) ───────────────────────────────────
+  // Quarterly target = SUM over months of MAX(floor, pct × monthly MRR).
+  // Score = MIN(1, SUM(adSpend) / SUM(target)). Caps at 1.0 for display.
   let adSpend = null;
-  if (last && _n(last.adSpend) > 0) {
-    const spend = _n(last.adSpend);
-    const mrr = _n(last.clientMRR);
+  if (qAdSpend > 0) {
     const pct = _n(cfgGet(cfg, 'adSpendPctOfGross', 0.10));
     const floor = _n(cfgGet(cfg, 'adSpendFloor', 1000));
-    const target = Math.max(floor, mrr * pct);
-    if (target <= 0) adSpend = null;
-    else if (spend >= target) {
-      const cap = _n(cfgGet(cfg, 'adSpendMaxScoreCap', 2.0));
-      // Linear from 1.0 at target → cap at 2× target
-      const over = Math.min(spend / target, 2);
-      adSpend = clamp(1 + (over - 1) * (cap - 1), 1, cap) / cap; // normalize back to 0-1
-      // Simpler: just cap at 1.0 for display since cap=2.0 means double credit
-      // is rare and we're already showing R/Y/G. Use 1.0 as the score ceiling.
-      adSpend = 1;
-    } else {
-      adSpend = clamp(spend / target, 0, 1);
+    const qTarget = inQuarter.reduce(
+      (s, r) => s + Math.max(floor, _n(r.clientMRR) * pct), 0
+    );
+    if (qTarget > 0) {
+      adSpend = qAdSpend >= qTarget ? 1 : clamp(qAdSpend / qTarget, 0, 1);
     }
   }
 
-  // ── Sub-score 4: Funnel (booking / show / close) ────────────────────────
+  // ── Sub-score 4: Funnel (booking / show / close, quarterly) ─────────────
+  // Quarterly rates from quarterly totals — every step's denominator is the
+  // SUM of the prior step across the quarter, not a per-month average.
   let funnel = null;
-  if (last) {
-    const leadsGen   = _n(last.leadsGenerated);
-    const apptsBkd   = _n(last.apptsBooked);
-    const showed     = _n(last.leadsShowed);
-    const signed     = _n(last.leadsSigned);
-    const haveData   = leadsGen > 0 || apptsBkd > 0 || showed > 0;
-    if (haveData) {
-      const bookFloor = _n(cfgGet(cfg, 'bookingFloor', 0.30));
-      const showFloor = _n(cfgGet(cfg, 'showFloor',    0.50));
-      const closeFloor = _n(cfgGet(cfg, 'closeFloor',  0.70));
-      const bookRate  = leadsGen > 0 ? apptsBkd / leadsGen : 0;
-      const showRate  = apptsBkd > 0 ? showed   / apptsBkd : 0;
-      const closeRate = showed   > 0 ? signed   / showed   : 0;
-      const bookScore  = clamp(bookRate  / Math.max(bookFloor,  0.01), 0, 1);
-      const showScore  = clamp(showRate  / Math.max(showFloor,  0.01), 0, 1);
-      const closeScore = clamp(closeRate / Math.max(closeFloor, 0.01), 0, 1);
-      funnel = (bookScore + showScore + closeScore) / 3;
-    }
+  const qBooked = sumQ('apptsBooked');
+  const qShowed = sumQ('leadsShowed');
+  const qSigned = sumQ('leadsSigned');
+  if (qLeads > 0 || qBooked > 0 || qShowed > 0) {
+    const bookFloor  = _n(cfgGet(cfg, 'bookingFloor', 0.30));
+    const showFloor  = _n(cfgGet(cfg, 'showFloor',    0.50));
+    const closeFloor = _n(cfgGet(cfg, 'closeFloor',   0.70));
+    const bookRate  = qLeads  > 0 ? qBooked / qLeads  : 0;
+    const showRate  = qBooked > 0 ? qShowed / qBooked : 0;
+    const closeRate = qShowed > 0 ? qSigned / qShowed : 0;
+    const bookScore  = clamp(bookRate  / Math.max(bookFloor,  0.01), 0, 1);
+    const showScore  = clamp(showRate  / Math.max(showFloor,  0.01), 0, 1);
+    const closeScore = clamp(closeRate / Math.max(closeFloor, 0.01), 0, 1);
+    funnel = (bookScore + showScore + closeScore) / 3;
   }
 
-  // ── Sub-score 5: Student Attrition ──────────────────────────────────────
+  // ── Sub-score 5: Student Attrition (quarterly) ──────────────────────────
+  // SUM(studentsCancelled across quarter) / first-month totalStudentsStart.
+  // Falls back to the last month's start count if the first is empty (some
+  // historical rows don't have it filled).
   let attrition = null;
-  if (last && _n(last.totalStudentsStart) > 0) {
-    const cancelRate = _n(last.studentsCancelled) / _n(last.totalStudentsStart);
+  const qCancelled = sumQ('studentsCancelled');
+  const startStudents =
+    _n(qFirst?.totalStudentsStart) ||
+    _n(qLast?.totalStudentsStart);
+  if (startStudents > 0) {
+    const cancelRate = qCancelled / startStudents;
     const greenFloor = _n(cfgGet(cfg, 'attritionGreenFloor',     0.03));
     const critCeil   = _n(cfgGet(cfg, 'attritionCriticalCeiling', 0.05));
     if      (cancelRate <= greenFloor) attrition = 1;
@@ -286,7 +360,9 @@ function clientSubScores(client, metrics, surveys, config, today = new Date()) {
   // ca-detail.jsx + admin-extra.jsx reference revenue, adEfficiency, growth.
   // Keep these computed for display so the old screens still render
   // without a parallel rewrite — but they're NOT used in bucket math.
-  const avgMRR = recent.length ? recent.reduce((s, m) => s + _n(m.clientMRR), 0) / recent.length : null;
+  const avgMRR = inQuarter.length
+    ? inQuarter.reduce((s, m) => s + _n(m.clientMRR), 0) / inQuarter.length
+    : null;
   const revenue = avgMRR != null
     ? clamp(avgMRR / Math.max(_n(client.monthlyRetainer), 1), 0, 1.2)
     : null;
@@ -302,7 +378,11 @@ function clientSubScores(client, metrics, surveys, config, today = new Date()) {
     performance,
     satisfaction,
     revenue, adEfficiency, growth, composite,
-    inGrace, recentMonths: recent.length,
+    inGrace,
+    recentMonths: inQuarter.length,        // legacy field name; now means "months in quarter"
+    quarterMonths: inQuarter.length,
+    quarterStart: qStartIso,
+    quarterEnd:   qEndIso,
   };
 }
 
@@ -312,6 +392,7 @@ function caScorecard(ca, state) {
   const cfg = (state && state.config) || {};
   const allClients = (state && state.clients) || [];
   const allMetrics = (state && state.monthlyMetrics) || [];
+  const allWeekly  = (state && state.weeklyMetrics)  || [];
   const allSurveys = (state && state.surveys) || [];
   const allEvents  = (state && state.growthEvents) || [];
   const cancelReasonsByCode = (state && state.cancelReasonsByCode) || {};
@@ -335,7 +416,7 @@ function caScorecard(ca, state) {
   // (per Formula Guide: "empty inputs don't penalize").
   const subs = myClients.map(c => ({
     client: c,
-    sub: clientSubScores(c, allMetrics, allSurveys, cfg, now),
+    sub: clientSubScores(c, allMetrics, allSurveys, cfg, now, allWeekly),
   }));
   const perfValues = subs.map(s => s.sub.performance).filter(v => v != null && Number.isFinite(v));
   const performance = perfValues.length
@@ -399,17 +480,17 @@ function caScorecard(ca, state) {
     : null;
 
   // ── Book completeness — data coverage gate on Performance ──────────────
-  // The UI promises "If this is below 100%, your Performance bonus is
-  // reduced proportionally." We honor that here: the displayed Performance
-  // bucket gets multiplied by bookCompleteness before going into the
-  // composite. The raw per-client perf scores are still computed per spec
-  // (skip empties); this is the CA-level data-coverage drag.
+  // Counts months covered by EFFECTIVE metrics (weekly rollups + monthly
+  // entries) so a weekly-cadence client logging weeks 1-4 of a month counts
+  // as one filled month, not four. Mirrors the SQL function in
+  // 20260505_quarterly_scoring.sql.
   const monthsInQuarter = Math.max(monthsBetween(qStartIso, qEndIso) + 1, 1);
   const expected = myClients.length * monthsInQuarter;
-  const filled = allMetrics.filter(m => {
-    const c = allClients.find(cl => cl.id === m.clientId);
-    return c && c.assignedCA === ca.id && m.month >= qStartIso && m.month <= qEndIso;
-  }).length;
+  let filled = 0;
+  myClients.forEach(c => {
+    const eff = effectiveMonthlyMetrics(allMetrics, allWeekly, c.id);
+    filled += eff.filter(m => m.month >= qStartIso && m.month <= qEndIso).length;
+  });
   const bookCompleteness = expected > 0 ? clamp(filled / expected, 0, 1) : 0;
 
   // Performance, gated by data coverage. If 1/50 client-months are filled,
@@ -567,6 +648,8 @@ Object.assign(window, {
   CABT_clientSubScores: clientSubScores,
   CABT_caScorecard: caScorecard,
   CABT_salesRollup: salesRollup,
+  CABT_rollUpWeeklyToMonthly: rollUpWeeklyToMonthly,
+  CABT_effectiveMonthlyMetrics: effectiveMonthlyMetrics,
   CABT_scoreToStatus: scoreToStatus,
   CABT_STATUS_COLORS: STATUS_COLORS,
   CABT_fmtMoney: fmtMoney,

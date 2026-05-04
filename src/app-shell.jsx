@@ -148,6 +148,7 @@ function App() {
         cas: 'cas',
         sales_team: 'sales',
         monthly_metrics: 'monthlyMetrics',
+        weekly_metrics: 'weeklyMetrics',
         growth_events: 'growthEvents',
         surveys: 'surveys',
         adjustments: 'adjustments',
@@ -193,7 +194,7 @@ function App() {
     };
     CABT_subscribeRealtime([
       'clients', 'cas', 'sales_team',
-      'monthly_metrics', 'growth_events', 'surveys',
+      'monthly_metrics', 'weekly_metrics', 'growth_events', 'surveys',
       'adjustments', 'weekly_checkins', 'monthly_checkins', 'pending_clients',
       'cancel_reasons', 'quarter_inputs', 'open_questions',
       'edit_requests', 'reviews', 'config',
@@ -239,9 +240,41 @@ function App() {
   };
 
   // Action handlers
-  const submitMetrics = (row, isEdit) => queueOrApply(s => ({
-    ...s, monthlyMetrics: isEdit ? s.monthlyMetrics.map(m => m.id === row.id ? row : m) : [...s.monthlyMetrics, row],
-  }), 'Monthly metrics saved');
+  // Phase 11 — cadence is passed from LogMetricsForm. Weekly rows go to
+  // weeklyMetrics state + weekly_metrics table; monthly stay where they were.
+  // Backend rolls weekly entries up into monthly via v_monthly_metrics_effective
+  // for scoring, so the same form covers both paths transparently.
+  const submitMetrics = async (row, isEdit, cadence = 'monthly') => {
+    const isWeekly = cadence === 'weekly';
+    const stateKey = isWeekly ? 'weeklyMetrics' : 'monthlyMetrics';
+    const mutator = (s) => ({
+      ...s,
+      [stateKey]: isEdit
+        ? (s[stateKey] || []).map(m => m.id === row.id ? row : m)
+        : [...(s[stateKey] || []), row],
+    });
+    const msg = isWeekly ? 'Weekly metrics saved' : 'Monthly metrics saved';
+    if (CABT_getApiMode() === 'supabase') {
+      // Optimistic + persist (realtime will reconcile if anything changes)
+      setState(mutator);
+      try {
+        if (isWeekly) {
+          if (isEdit) await CABT_api.updateWeeklyMetrics(row.id, row);
+          else        await CABT_api.submitWeeklyMetrics(row);
+        } else {
+          if (isEdit) await CABT_api.updateMonthlyMetrics(row.id, row);
+          else        await CABT_api.submitMonthlyMetrics(row);
+        }
+        showToast(msg);
+      } catch (e) {
+        showToast('Save failed');
+        console.error('[submitMetrics]', e);
+      }
+      navigate('back');
+    } else {
+      queueOrApply(mutator, msg);
+    }
+  };
   const submitEvent = (row) => queueOrApply(s => ({ ...s, growthEvents: [...s.growthEvents, row] }), 'Event saved');
   const submitCheckin = async (row, cadence) => {
     if (CABT_getApiMode() === 'supabase') {
@@ -1056,7 +1089,7 @@ function OfflineScreen({ onRetry }) {
 function LogPickerSheet({ theme, onClose, onPick }) {
   const items = [
     { name: 'log-checkin', icon: 'edit',      label: 'Check-in',        desc: 'Concern, win, account + agency actions' },
-    { name: 'log-metrics', icon: 'chart',     label: 'Monthly metrics', desc: 'Leads, ad spend, MRR, attrition' },
+    { name: 'log-metrics', icon: 'chart',     label: 'Metrics',         desc: 'Leads, ad spend, MRR, attrition (weekly or monthly per client)' },
     { name: 'log-event',   icon: 'cal',       label: 'Growth event',    desc: 'Workshop, gear sale, milestone' },
     { name: 'log-survey',  icon: 'star',      label: 'Client survey',   desc: 'Satisfaction snapshot' },
   ];

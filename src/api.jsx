@@ -268,6 +268,7 @@ const CABT_api = {
     if (mode === 'supabase') return loadStateSupabase();
   },
   async submitMonthlyMetrics(row) { return route('submitMonthlyMetrics', row, 'monthly_metrics'); },
+  async submitWeeklyMetrics(row)  { return route('submitWeeklyMetrics',  row, 'weekly_metrics'); },
   async submitWeeklyCheckin(row)  { return route('submitWeeklyCheckin',  row, 'weekly_checkins'); },
   async submitMonthlyCheckin(row) { return route('submitMonthlyCheckin', row, 'monthly_checkins'); },
   async submitEvent(row)          { return route('submitEvent',          row, 'growth_events'); },
@@ -276,6 +277,7 @@ const CABT_api = {
   async submitAdjustment(row)     { return route('submitAdjustment',     row, 'adjustments'); },
   async submitClient(row)         { return route('submitClient',         row, 'clients'); },
   async updateMonthlyMetrics(id, row) { return updateRoute(row, 'monthly_metrics', id); },
+  async updateWeeklyMetrics(id, row)  { return updateRoute(row, 'weekly_metrics',  id); },
   async updateEvent(id, row)          { return updateRoute(row, 'growth_events',   id); },
   async updateSurvey(id, row)         { return updateRoute(row, 'surveys',         id); },
   async updateClient(id, row)         { return updateRoute(row, 'clients',         id); },
@@ -414,12 +416,14 @@ async function loadStateSheet() {
 
 async function loadStateSupabase() {
   const sb = await CABT_sb();
-  const [profile, cas, sales, clients, mm, ge, sv, adj, cfg, pending, oq, wc, mc, cr, qi, er, rv] = await Promise.all([
+  const [profile, cas, sales, clients, mm, wm, ge, sv, adj, cfg, pending, oq, wc, mc, cr, qi, er, rv] = await Promise.all([
     CABT_currentProfile(),
     sb.from('cas').select('*').order('id'),
     sb.from('sales_team').select('*').order('id'),
     sb.from('clients').select('*'),
     sb.from('monthly_metrics').select('*'),
+    // weekly_metrics (Phase 11 — graceful if table not yet migrated)
+    sb.from('weekly_metrics').select('*').then(r => r, () => ({ data: [] })),
     sb.from('growth_events').select('*'),
     sb.from('surveys').select('*'),
     sb.from('adjustments').select('*'),
@@ -455,6 +459,7 @@ async function loadStateSupabase() {
     _live: true, me: profile, role: profile?.role,
     cas: toUI(cas.data || []), sales: toUI(sales.data || []),
     clients: toUI(clients.data || []), monthlyMetrics: toUI(mm.data || []),
+    weeklyMetrics: toUI(wm.data || []),
     growthEvents: toUI(ge.data || []), surveys: toUI(sv.data || []),
     adjustments: toUI(adj.data || []), config: cfgValues,
     pendingClients: toUI(pending.data || []), openQuestions: toUI(oq.data || []),

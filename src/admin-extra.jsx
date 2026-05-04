@@ -1780,7 +1780,16 @@ function AdminBulkCadence({ state, theme, navigate }) {
       <Card theme={theme} padding={14}>
         <SectionLabel theme={theme}>Bulk cadence editor</SectionLabel>
         <div style={{ fontSize: 12, color: theme.inkMuted, marginTop: 4, marginBottom: 10, lineHeight: 1.5 }}>
-          Select multiple clients and apply weekly or monthly cadence in one shot. Cadence controls only how often CAs log narrative check-ins — monthly_metrics are always monthly regardless.
+          Select multiple clients and apply weekly or monthly cadence in one shot. Cadence only controls how often CAs log <em>narrative</em> check-ins (concern, win, account-side, agency-side action).
+        </div>
+        <div style={{
+          fontSize: 12, color: theme.ink, lineHeight: 1.55,
+          padding: '10px 12px', marginBottom: 10, borderRadius: 6,
+          background: 'rgba(70, 130, 180, 0.08)', border: '1px solid rgba(70, 130, 180, 0.25)',
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>What changes when you flip cadence</div>
+          <div style={{ marginBottom: 3 }}>• <strong>Old check-ins are kept as-is</strong> — weekly entries stay weekly, monthly stay monthly. Only <em>future</em> check-ins follow the new cadence.</div>
+          <div>• <strong>Scoring is unaffected.</strong> All bonus math (MRR, ad spend, leads, attrition) reads the monthly metrics table, which is always monthly regardless of cadence. No aggregation needed.</div>
         </div>
 
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

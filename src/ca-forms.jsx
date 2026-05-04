@@ -37,25 +37,66 @@ function SectionCard({ id, title, doneLabel, children, theme, isOpen, done, onTo
   );
 }
 
-// ── Smart-card form for Monthly Metrics ────────────────────────────────────
+// ── Smart-card form for Metrics (monthly OR weekly per client cadence) ────
+//
+// Phase 11 (Bobby 2026-05-05): clients can be on weekly or monthly cadence.
+// This form auto-detects the selected client's cadence and:
+//   - shows a `weekStart` date picker (ISO Monday) when weekly
+//   - shows a `month` picker when monthly
+// Numeric fields are identical either way; the backend rolls weekly entries
+// up to monthly via v_monthly_metrics_effective for scoring.
 function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, editingId }) {
   const myClients = state.clients.filter(c => c.assignedCA === ca.id && !c.cancelDate);
-  const editing = editingId ? state.monthlyMetrics.find(m => m.id === editingId) : null;
 
-  // Prefill from last month's row for this client
-  const getLastForClient = (cid) => {
-    if (!cid) return null;
-    return state.monthlyMetrics
-      .filter(m => m.clientId === cid)
-      .sort((a, b) => b.month.localeCompare(a.month))[0];
-  };
+  // Editing: try weekly first (since IDs are prefixed differently); fall back
+  // to monthly. Pre-existing callers still navigate with monthly IDs and that
+  // path keeps working.
+  const editing = editingId
+    ? ((state.weeklyMetrics || []).find(m => m.id === editingId)
+       || (state.monthlyMetrics || []).find(m => m.id === editingId))
+    : null;
+  const editingKind = editing
+    ? (editing.weekStart ? 'weekly' : 'monthly')
+    : null;
 
   const initialClient = editing?.clientId || presetClientId || (myClients[0]?.id ?? '');
-  const lastForInit = getLastForClient(initialClient);
+  const initialClientObj = state.clients.find(c => c.id === initialClient);
+  const initialCadence = editingKind || (initialClientObj?.loggingCadence || 'monthly');
+
+  // ISO Monday of current week (used for weekly default + week picker prefill)
+  const isoMondayOf = (d = new Date()) => {
+    const x = new Date(d);
+    const day = x.getDay() || 7;
+    if (day !== 1) x.setDate(x.getDate() - (day - 1));
+    return x.toISOString().slice(0, 10);
+  };
+
+  // Prefill from last entry. Prefer same-cadence; fall back to other.
+  const getLastForClient = (cid, cadence) => {
+    if (!cid) return null;
+    if (cadence === 'weekly') {
+      const w = (state.weeklyMetrics || [])
+        .filter(m => m.clientId === cid)
+        .sort((a, b) => (b.weekStart || '').localeCompare(a.weekStart || ''))[0];
+      if (w) return w;
+      // Fall back to last monthly so MRR / studentsStart prefill works on first weekly entry
+      return (state.monthlyMetrics || [])
+        .filter(m => m.clientId === cid)
+        .sort((a, b) => (b.month || '').localeCompare(a.month || ''))[0] || null;
+    }
+    return (state.monthlyMetrics || [])
+      .filter(m => m.clientId === cid)
+      .sort((a, b) => (b.month || '').localeCompare(a.month || ''))[0] || null;
+  };
+
+  const lastForInit = getLastForClient(initialClient, initialCadence);
 
   const [form, setForm] = React.useState(editing ? { ...editing } : {
     clientId: initialClient,
-    month: CABT_currentMonthIso(),
+    cadence: initialCadence,
+    // Use the right period field for this cadence; the other stays empty.
+    month:     initialCadence === 'monthly' ? CABT_currentMonthIso() : '',
+    weekStart: initialCadence === 'weekly'  ? isoMondayOf()          : '',
     clientMRR: lastForInit?.clientMRR ?? '',
     leadCost: lastForInit?.leadCost ?? '',
     adSpend: lastForInit?.adSpend ?? '',
@@ -69,6 +110,10 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
     notes: '',
   });
 
+  // Re-derive cadence whenever client changes; the form's behavior depends on it.
+  const selectedClient = state.clients.find(c => c.id === form.clientId);
+  const activeCadence = (editingKind || form.cadence || selectedClient?.loggingCadence || 'monthly');
+
   const [open, setOpen] = React.useState({ ident: true, money: true, funnel: false, attrition: false, notes: false });
   const [errors, setErrors] = React.useState({});
   const [warnings, setWarnings] = React.useState({});
@@ -77,9 +122,20 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
   const updateForm = (key, value) => {
     setForm(f => {
       const next = { ...f, [key]: value };
-      // Re-prefill when client changes (only if not editing)
+      // Re-prefill + re-pick cadence when client changes (only if not editing)
       if (!editing && key === 'clientId') {
-        const last = getLastForClient(value);
+        const newClient = state.clients.find(c => c.id === value);
+        const newCadence = newClient?.loggingCadence || 'monthly';
+        next.cadence = newCadence;
+        // Match the period field to the new cadence
+        if (newCadence === 'weekly') {
+          next.weekStart = next.weekStart || isoMondayOf();
+          next.month = '';
+        } else {
+          next.month = next.month || CABT_currentMonthIso();
+          next.weekStart = '';
+        }
+        const last = getLastForClient(value, newCadence);
         if (last) {
           next.clientMRR = next.clientMRR || last.clientMRR;
           next.leadCost = next.leadCost || last.leadCost;
@@ -96,29 +152,42 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
     const e = {};
     const w = {};
     if (!form.clientId) e.clientId = 'Required';
-    if (!form.month) e.month = 'Required';
+    const periodField = activeCadence === 'weekly' ? 'weekStart' : 'month';
+    if (!form[periodField]) e[periodField] = 'Required';
     if (form.clientMRR === '' || form.clientMRR == null) e.clientMRR = 'Required';
 
-    // Duplicate check
-    if (form.clientId && form.month) {
-      const monthIso = CABT_firstOfMonth(form.month);
-      const dupe = state.monthlyMetrics.find(m =>
-        m.clientId === form.clientId &&
-        m.month === monthIso &&
-        m.id !== editingId
-      );
-      if (dupe) {
-        setDuplicateBlock(dupe);
-        return false;
+    // Duplicate check (same client + same period, in the matching table)
+    if (form.clientId && form[periodField]) {
+      if (activeCadence === 'weekly') {
+        const dupe = (state.weeklyMetrics || []).find(m =>
+          m.clientId === form.clientId &&
+          m.weekStart === form.weekStart &&
+          m.id !== editingId
+        );
+        if (dupe) { setDuplicateBlock(dupe); return false; }
+      } else {
+        const monthIso = CABT_firstOfMonth(form.month);
+        const dupe = (state.monthlyMetrics || []).find(m =>
+          m.clientId === form.clientId &&
+          m.month === monthIso &&
+          m.id !== editingId
+        );
+        if (dupe) { setDuplicateBlock(dupe); return false; }
       }
     }
     setDuplicateBlock(null);
 
     // Soft warnings
-    const monthDate = new Date(form.month);
-    const now = new Date();
-    const monthsOff = Math.abs((monthDate.getFullYear() - now.getFullYear()) * 12 + (monthDate.getMonth() - now.getMonth()));
-    if (monthsOff > 1) w.month = `That's ${monthsOff} months from today — typo?`;
+    if (activeCadence === 'monthly' && form.month) {
+      const monthDate = new Date(form.month);
+      const now = new Date();
+      const monthsOff = Math.abs((monthDate.getFullYear() - now.getFullYear()) * 12 + (monthDate.getMonth() - now.getMonth()));
+      if (monthsOff > 1) w.month = `That's ${monthsOff} months from today — typo?`;
+    } else if (activeCadence === 'weekly' && form.weekStart) {
+      const dt = new Date(form.weekStart + 'T12:00:00');
+      const daysOff = Math.abs(Math.round((dt - new Date()) / 86400000));
+      if (daysOff > 60) w.weekStart = `That's ${daysOff} days from today — typo?`;
+    }
 
     ['leadsGenerated', 'apptsBooked', 'leadsShowed', 'leadsSigned'].forEach(k => {
       if (form[k] === 0 || form[k] === '0') w[k] = 'Confirm zero is real';
@@ -131,12 +200,17 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
 
   const handleSubmit = () => {
     if (!validate()) return;
-    const monthIso = CABT_firstOfMonth(form.month);
     const num = (v) => v === '' || v == null ? 0 : Number(v);
+    const isWeekly = activeCadence === 'weekly';
+    const idPrefix = isWeekly ? 'WM' : 'MM';
+    const periodFields = isWeekly
+      ? { weekStart: form.weekStart }
+      : { month: CABT_firstOfMonth(form.month) };
     const row = {
-      id: editingId || `MM-${Date.now()}`,
+      id: editingId || `${idPrefix}-${Date.now()}`,
+      caId: ca.id,
       clientId: form.clientId,
-      month: monthIso,
+      ...periodFields,
       clientMRR: num(form.clientMRR),
       leadCost: num(form.leadCost),
       adSpend: num(form.adSpend),
@@ -149,12 +223,13 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
       studentsCancelled: num(form.studentsCancelled),
       notes: form.notes || '',
     };
-    onSubmit(row, !!editing);
+    onSubmit(row, !!editing, activeCadence);
   };
 
   // Section completion indicators
+  const periodFilled = activeCadence === 'weekly' ? !!form.weekStart : !!form.month;
   const sectionDone = {
-    ident: !!form.clientId && !!form.month,
+    ident: !!form.clientId && periodFilled,
     money: form.clientMRR !== '' && form.adSpend !== '' && form.clientGrossRevenue !== '',
     funnel: ['leadsGenerated','apptsBooked','leadsShowed','leadsSigned'].every(k => form[k] !== ''),
     attrition: form.totalStudentsStart !== '' && form.studentsCancelled !== '',
@@ -162,10 +237,13 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
 
   if (duplicateBlock) {
     const dupClient = state.clients.find(c => c.id === duplicateBlock.clientId);
+    const dupePeriodLabel = duplicateBlock.weekStart
+      ? `Week of ${CABT_fmtDate(duplicateBlock.weekStart)}`
+      : CABT_fmtMonth(duplicateBlock.month);
     return (
       <div style={{ padding: '16px 16px 100px' }}>
-        <Banner tone="error" icon="alert" title={`${CABT_fmtMonth(duplicateBlock.month)} already logged`} theme={theme}>
-          You already logged {CABT_fmtMonth(duplicateBlock.month)} for {dupClient?.name}. Edit the existing row instead?
+        <Banner tone="error" icon="alert" title={`${dupePeriodLabel} already logged`} theme={theme}>
+          You already logged {dupePeriodLabel} for {dupClient?.name}. Edit the existing row instead?
         </Banner>
         <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
           <Button theme={theme} variant="secondary" fullWidth onClick={() => setDuplicateBlock(null)}>Cancel</Button>
@@ -183,25 +261,50 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
     id, theme, isOpen: open[id], done: sectionDone[id], onToggle: toggleSection,
   });
 
+  const periodLabel  = activeCadence === 'weekly' ? 'Week starting (Mon)' : 'Month';
+  const periodDone = activeCadence === 'weekly'
+    ? (form.weekStart ? `Week of ${CABT_fmtDate(form.weekStart)}` : 'Required')
+    : (form.month ? CABT_fmtMonth(form.month) : 'Required');
+  const cadenceHint = activeCadence === 'weekly'
+    ? 'This client is on weekly cadence — your numbers roll up into the month for scoring.'
+    : 'Prefilled from last month where possible. Tap a section to edit.';
+
   return (
     <FormShell theme={theme} gap={12}>
       <div style={{ fontSize: 13, color: theme.inkSoft, padding: '0 4px' }}>
-        Prefilled from last month where possible. Tap a section to edit.
+        {cadenceHint}
       </div>
 
-      <SectionCard {...sectionProps('ident')} title="Client & month"
-        doneLabel={form.clientId && form.month ? `${state.clients.find(c => c.id === form.clientId)?.name} · ${CABT_fmtMonth(form.month)}` : 'Required'}>
+      <SectionCard {...sectionProps('ident')} title={activeCadence === 'weekly' ? 'Client & week' : 'Client & month'}
+        doneLabel={form.clientId && periodFilled
+          ? `${state.clients.find(c => c.id === form.clientId)?.name} · ${periodDone}`
+          : 'Required'}>
         <Field label="Client" required error={errors.clientId} theme={theme}>
           <Select
             value={form.clientId}
             onChange={(v) => updateForm('clientId', v)}
-            options={myClients.map(c => ({ value: c.id, label: c.name }))}
+            options={myClients.map(c => ({
+              value: c.id,
+              label: `${c.name} · ${(c.loggingCadence || 'monthly')}`,
+            }))}
             theme={theme}
           />
         </Field>
-        <Field label="Month" required error={errors.month} hint={warnings.month} theme={theme}>
-          <Input type="month" value={form.month?.slice(0,7)} onChange={(v) => updateForm('month', v + '-01')} theme={theme}/>
+        <Field label={periodLabel} required
+               error={activeCadence === 'weekly' ? errors.weekStart : errors.month}
+               hint={activeCadence === 'weekly' ? warnings.weekStart : warnings.month}
+               theme={theme}>
+          {activeCadence === 'weekly'
+            ? <Input type="date" value={form.weekStart} onChange={(v) => updateForm('weekStart', v)} theme={theme}/>
+            : <Input type="month" value={form.month?.slice(0,7)} onChange={(v) => updateForm('month', v + '-01')} theme={theme}/>}
         </Field>
+        <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '4px 10px', borderRadius: 12,
+                      background: theme.bgSoft || 'rgba(255,255,255,0.04)',
+                      border: `1px solid ${theme.rule}` }}>
+          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, color: theme.inkMuted, textTransform: 'uppercase' }}>Cadence</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: theme.ink, textTransform: 'capitalize' }}>{activeCadence}</span>
+        </div>
       </SectionCard>
 
       <SectionCard {...sectionProps('money')} title="Revenue & spend"
@@ -238,7 +341,7 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
 
       <SectionCard {...sectionProps('attrition')} title="Attrition"
         doneLabel={sectionDone.attrition ? `${form.studentsCancelled} of ${form.totalStudentsStart} cancelled` : 'Tap to fill'}>
-        <Field label="Total Students (Start)" hint="Total student count at start of the month. Used as attrition denominator." theme={theme}>
+        <Field label="Total Students (Start)" hint={activeCadence === 'weekly' ? 'Student count at start of this week. Used as attrition denominator.' : 'Total student count at start of the month. Used as attrition denominator.'} theme={theme}>
           <Input type="number" inputmode="numeric" value={form.totalStudentsStart} onChange={(v) => updateForm('totalStudentsStart', v)} theme={theme} />
         </Field>
         <Field label="Students cancelled" theme={theme}>
@@ -266,7 +369,7 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
       <StickyBar theme={theme}>
         <Button theme={theme} variant="secondary" onClick={() => navigate('back')}>Cancel</Button>
         <Button theme={theme} variant="primary" fullWidth onClick={handleSubmit}>
-          {editing ? 'Save changes' : 'Save monthly metrics'}
+          {editing ? 'Save changes' : (activeCadence === 'weekly' ? 'Save weekly metrics' : 'Save monthly metrics')}
         </Button>
       </StickyBar>
     </FormShell>
