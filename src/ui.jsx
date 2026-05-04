@@ -165,15 +165,32 @@ function ScoreRing({ value, size = 96, stroke = 8, color, bg = 'rgba(0,0,0,0.07)
 }
 
 // ── Card ───────────────────────────────────────────────────────────────────
-function Card({ children, theme, padding = 16, style = {} }) {
-  return (
-    <div style={{
-      background: theme.surface, borderRadius: theme.radius,
-      border: `1px solid ${theme.rule}`,
-      padding,
-      ...style,
-    }}>{children}</div>
-  );
+function Card({ children, theme, padding = 16, style = {}, onClick, role, ...rest }) {
+  // When onClick is provided, render as an interactive element so click +
+  // keyboard activation work. Without this branch the handler was silently
+  // dropped (Bobby 2026-05-04 "tap to edit doesn't work"). Any extra props
+  // (aria-label, data-*, etc.) flow through via ...rest.
+  const interactive = typeof onClick === 'function';
+  const baseStyle = {
+    background: theme.surface, borderRadius: theme.radius,
+    border: `1px solid ${theme.rule}`,
+    padding,
+    ...(interactive ? { cursor: 'pointer' } : null),
+    ...style,
+  };
+  if (interactive) {
+    return (
+      <div
+        onClick={onClick}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(e); } }}
+        role={role || 'button'}
+        tabIndex={0}
+        style={baseStyle}
+        {...rest}
+      >{children}</div>
+    );
+  }
+  return <div style={baseStyle} {...rest}>{children}</div>;
 }
 
 // ── Button ─────────────────────────────────────────────────────────────────
