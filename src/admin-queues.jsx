@@ -24,7 +24,9 @@ function Pill({ tone = 'gray', theme, children }) {
 
 // ── Edit Approvals ──────────────────────────────────────────────────────
 function AdminEditApprovals({ state, theme }) {
-  const [requests, setRequests] = React.useState(() => state.editRequests || SEED_EDIT_REQUESTS(state));
+  // Read from state directly so realtime updates flow through. Local-mode
+  // dev shows the seed when state.editRequests isn't present.
+  const requests = state.editRequests || SEED_EDIT_REQUESTS(state);
   const [filter, setFilter] = React.useState('pending'); // pending | approved | rejected
   const [busy, setBusy] = React.useState(null);
 
@@ -42,7 +44,8 @@ function AdminEditApprovals({ state, theme }) {
         }
       } catch (e) { console.error(e); }
     }
-    setRequests(rs => rs.map(r => r.id === req.id ? { ...r, status, decidedAt: CABT_todayIso() } : r));
+    // Realtime push will update state.editRequests automatically; no local
+    // setState needed.
     setBusy(null);
   };
 
@@ -166,7 +169,8 @@ function SEED_EDIT_REQUESTS(state) {
 
 // ── Reviews Inbox ───────────────────────────────────────────────────────
 function AdminReviewsInbox({ state, theme }) {
-  const [reviews, setReviews] = React.useState(() => state.reviews || SEED_REVIEWS(state));
+  // Read from state directly; realtime keeps it fresh.
+  const reviews = state.reviews || SEED_REVIEWS(state);
   const [filter, setFilter] = React.useState('unmatched');
 
   const counts = {
@@ -188,7 +192,7 @@ function AdminReviewsInbox({ state, theme }) {
         await sb.from('reviews').update({ client_id: clientId, link_method: 'manual' }).eq('id', reviewId);
       } catch (e) { console.error(e); }
     }
-    setReviews(rs => rs.map(r => r.id === reviewId ? { ...r, clientId } : r));
+    // Realtime updates state.reviews on the UPDATE; no local setState needed.
   };
 
   return (

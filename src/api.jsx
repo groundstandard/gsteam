@@ -414,7 +414,7 @@ async function loadStateSheet() {
 
 async function loadStateSupabase() {
   const sb = await CABT_sb();
-  const [profile, cas, sales, clients, mm, ge, sv, adj, cfg, pending, oq, wc, mc, cr, qi] = await Promise.all([
+  const [profile, cas, sales, clients, mm, ge, sv, adj, cfg, pending, oq, wc, mc, cr, qi, er, rv] = await Promise.all([
     CABT_currentProfile(),
     sb.from('cas').select('*').order('id'),
     sb.from('sales_team').select('*').order('id'),
@@ -428,9 +428,14 @@ async function loadStateSupabase() {
     sb.from('open_questions').select('*'),
     sb.from('weekly_checkins').select('*'),
     sb.from('monthly_checkins').select('*'),
-    // New tables for bonus tracker alignment (graceful if missing)
+    // Bonus tracker alignment (graceful if tables missing)
     sb.from('cancel_reasons').select('*').order('sort_order').then(r => r, () => ({ data: [] })),
     sb.from('quarter_inputs').select('*').order('quarter_start', { ascending: false }).then(r => r, () => ({ data: [] })),
+    // Admin queues — Edit Requests + Reviews Inbox (deferred to v2 per PRD,
+    // but loading them now so the screens show real data instead of empty
+    // when the tables exist).
+    sb.from('edit_requests').select('*').order('requested_at', { ascending: false }).then(r => r, () => ({ data: [] })),
+    sb.from('reviews').select('*').order('reviewed_at', { ascending: false }).then(r => r, () => ({ data: [] })),
   ]);
 
   const cancelReasons = toUI(cr.data || []);
@@ -456,6 +461,8 @@ async function loadStateSupabase() {
     weeklyCheckins: toUI(wc.data || []), monthlyCheckins: toUI(mc.data || []),
     cancelReasons, cancelReasonsByCode,
     quarterInputs, allQuarterInputs: allQI,
+    editRequests: toUI(er.data || []),
+    reviews:      toUI(rv.data || []),
   };
 }
 
