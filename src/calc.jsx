@@ -167,6 +167,10 @@ function clientSubScores(client, metrics, surveys, config, today = new Date()) {
   // ── Sub-score 1: MRR Growth ─────────────────────────────────────────────
   // Linear: $0 → 0; fullCreditMrrGrowth → 1.0. Negative floors at 0.
   // Quarter-over-quarter: last MRR vs first MRR in the recent window.
+  // GRACE PERIOD POLICY (revised 2026-05-04 per Bobby): clients <90 days
+  // return NULL on perf sub-scores (skipped from average), not 1.0. Original
+  // spec auto-1.0 inflated CA scores when most clients were new — Bobby's
+  // intuition "no data = not green" wins. Grace clients still don't penalize.
   let mrrGrowth = null;
   if (recent.length >= 2) {
     const firstMRR = _n(recent[0].clientMRR);
@@ -174,9 +178,8 @@ function clientSubScores(client, metrics, surveys, config, today = new Date()) {
     const delta = lastMRR - firstMRR;
     const target = _n(cfgGet(cfg, 'fullCreditMrrGrowth', 750));
     mrrGrowth = clamp(delta / Math.max(target, 1), 0, 1);
-  } else if (inGrace) {
-    mrrGrowth = 1; // grace
   }
+  // (no else: in-grace + no data = null, skipped from CA average)
 
   // ── Sub-score 2: Lead Cost (stepped) ────────────────────────────────────
   let leadCost = null;
@@ -189,9 +192,8 @@ function clientSubScores(client, metrics, surveys, config, today = new Date()) {
     else if (lc <= great) leadCost = 0.75;
     else if (lc <= ok)    leadCost = 0.50;
     else                  leadCost = 0;
-  } else if (inGrace) {
-    leadCost = 1;
   }
+  // (in-grace + no data = null)
 
   // ── Sub-score 3: Ad Spend (target band) ─────────────────────────────────
   // Target = MAX($1000 floor, pct × Client MRR)
@@ -199,9 +201,7 @@ function clientSubScores(client, metrics, surveys, config, today = new Date()) {
   // Over target → up to maxScoreCap (default 2.0 = bonus credit)
   // Under target → linear 0 → 1.0
   let adSpend = null;
-  if (inGrace) {
-    adSpend = 1;
-  } else if (last && _n(last.adSpend) > 0) {
+  if (last && _n(last.adSpend) > 0) {
     const spend = _n(last.adSpend);
     const mrr = _n(last.clientMRR);
     const pct = _n(cfgGet(cfg, 'adSpendPctOfGross', 0.10));
@@ -223,9 +223,7 @@ function clientSubScores(client, metrics, surveys, config, today = new Date()) {
 
   // ── Sub-score 4: Funnel (booking / show / close) ────────────────────────
   let funnel = null;
-  if (inGrace) {
-    funnel = 1;
-  } else if (last) {
+  if (last) {
     const leadsGen   = _n(last.leadsGenerated);
     const apptsBkd   = _n(last.apptsBooked);
     const showed     = _n(last.leadsShowed);
@@ -247,9 +245,7 @@ function clientSubScores(client, metrics, surveys, config, today = new Date()) {
 
   // ── Sub-score 5: Student Attrition ──────────────────────────────────────
   let attrition = null;
-  if (inGrace) {
-    attrition = 1;
-  } else if (last && _n(last.totalStudentsStart) > 0) {
+  if (last && _n(last.totalStudentsStart) > 0) {
     const cancelRate = _n(last.studentsCancelled) / _n(last.totalStudentsStart);
     const greenFloor = _n(cfgGet(cfg, 'attritionGreenFloor',     0.03));
     const critCeil   = _n(cfgGet(cfg, 'attritionCriticalCeiling', 0.05));
@@ -271,10 +267,12 @@ function clientSubScores(client, metrics, surveys, config, today = new Date()) {
     s.clientId === client.id && s.date && new Date(s.date) >= cutoff
   );
   let satisfaction = null;
-  if (inGrace) {
-    satisfaction = 1;
-  } else if (recentSurveys.length === 0) {
-    satisfaction = _n(cfgGet(cfg, 'noResponsePenalty', 0.7));
+  if (recentSurveys.length === 0) {
+    // No data = no display score (gray). Past grace, this would normally
+    // apply noResponsePenalty per spec, but Bobby's preference is to show
+    // empty rather than penalize. The bucket-level Retention rate is what
+    // actually matters for the bonus payout.
+    satisfaction = null;
   } else {
     const total = recentSurveys.reduce((s, r) => {
       if (r.score != null) return s + _n(r.score) / 10; // 1-10 scale
