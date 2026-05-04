@@ -673,23 +673,50 @@ function AdminClientCalc({ state, theme, clientId, navigate, onSetCadence, onSet
                 </div>
               </div>
               <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 6 }}>Cancel reason</div>
-                <Select
-                  value={c.cancelReason || ''}
-                  onChange={(v) => onSetRates(c.id, { cancelReason: v || null })}
-                  options={[
-                    { value: '', label: '— not cancelled —' },
-                    ...cancelReasons.map(r => ({
-                      value: r.code,
-                      label: `${r.label}${r.countsAgainstCa ? '' : ' (does not count against CA)'}`,
-                    })),
-                  ]}
-                  theme={theme}
-                />
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                    {c.cancelDate ? 'Cancellation' : 'Status'}
+                  </div>
+                  {c.cancelDate ? (
+                    <button
+                      onClick={() => onSetRates(c.id, { cancelDate: null, cancelReason: null })}
+                      style={{
+                        background: 'transparent', border: `1px solid ${theme.rule}`,
+                        color: theme.ink, fontSize: 11, fontWeight: 600,
+                        padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+                      }}>
+                      Reactivate
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => onSetRates(c.id, { cancelDate: CABT_todayIso() })}
+                      style={{
+                        background: 'transparent', border: `1px solid #dc3c3c66`,
+                        color: '#dc3c3c', fontSize: 11, fontWeight: 600,
+                        padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+                      }}>
+                      Cancel client
+                    </button>
+                  )}
+                </div>
+                {c.cancelDate && (
+                  <Select
+                    value={c.cancelReason || ''}
+                    onChange={(v) => onSetRates(c.id, { cancelReason: v || null })}
+                    options={[
+                      { value: '', label: '— pick a reason —' },
+                      ...cancelReasons.map(r => ({
+                        value: r.code,
+                        label: `${r.label}${r.countsAgainstCa ? '' : ' (does not count against CA)'}`,
+                      })),
+                    ]}
+                    theme={theme}
+                  />
+                )}
                 <div style={{ fontSize: 11, color: theme.inkMuted, marginTop: 6, lineHeight: 1.4 }}>
                   {c.cancelDate
-                    ? `Cancelled ${CABT_fmtDate(c.cancelDate)}. Reason controls whether this hurts the CA's retention score.`
-                    : 'Set this only when the client cancels. Reasons flagged "does not count against CA" (e.g. business closed) are excluded from retention math.'}
+                    ? `Cancelled ${CABT_fmtDate(c.cancelDate)}. Reason flagged "does not count against CA" excludes it from retention math.`
+                    : 'Tap "Cancel client" when the client ends their contract. You\'ll set today as the cancel date and pick a reason.'}
                 </div>
               </div>
             </Card>
