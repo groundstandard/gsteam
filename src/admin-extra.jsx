@@ -821,7 +821,9 @@ function AdminClientCalc({ state, theme, clientId, navigate, onSetCadence, onSet
 }
 
 // ── Open Questions ─────────────────────────────────────────────────────────
-const OPEN_QUESTIONS_KEY = 'cabt_open_questions_v1';
+// Demo seed used ONLY in local mode (apiMode === 'local' / state._live false).
+// In supabase mode, AdminOpenQuestions reads state.openQuestions from the
+// real open_questions table and writes via Supabase.
 const SEED_QUESTIONS = [
   { id: 'Q-001', topic: 'Scoring',   priority: 'high',   status: 'open',
     question: 'Does the W (book completeness) multiplier apply only to Performance, or to the whole composite?',
@@ -849,25 +851,19 @@ const SEED_QUESTIONS = [
     created: '2026-04-12' },
 ];
 
-function loadQuestions() {
-  try {
-    const raw = localStorage.getItem(OPEN_QUESTIONS_KEY);
-    if (!raw) return SEED_QUESTIONS;
-    return JSON.parse(raw);
-  } catch (e) { return SEED_QUESTIONS; }
-}
-function saveQuestions(qs) {
-  try { localStorage.setItem(OPEN_QUESTIONS_KEY, JSON.stringify(qs)); } catch (e) {}
-}
-
 function AdminOpenQuestions({ state, theme }) {
-  const [questions, setQuestions] = React.useState(loadQuestions);
+  // Supabase mode reads from state.openQuestions (loaded by loadStateSupabase
+  // and kept fresh by realtime). Local-only mode (no _live flag) falls back
+  // to the SEED_QUESTIONS demo so the screen is reachable in dev.
+  const isLive = !!state._live;
+  const questions = isLive ? (state.openQuestions || []) : SEED_QUESTIONS;
+
   const [filter, setFilter] = React.useState('open'); // open | all | answered
   const [adding, setAdding] = React.useState(false);
   const [draft, setDraft] = React.useState({ topic: '', priority: 'medium', question: '', context: '', owner: 'Bobby' });
   const [expanded, setExpanded] = React.useState({});
-
-  React.useEffect(() => saveQuestions(questions), [questions]);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState(null);
 
   const filtered = questions.filter(q => filter === 'all' ? true : q.status === filter);
   const byStatus = {
@@ -875,22 +871,58 @@ function AdminOpenQuestions({ state, theme }) {
     answered: questions.filter(q => q.status === 'answered').length,
   };
 
-  const submitDraft = () => {
-    if (!draft.question.trim()) return;
-    const q = {
-      id: `Q-${String(questions.length + 1).padStart(3, '0')}`,
-      ...draft, status: 'open', created: CABT_todayIso(),
-    };
-    setQuestions(qs => [q, ...qs]);
-    setDraft({ topic: '', priority: 'medium', question: '', context: '', owner: 'Bobby' });
-    setAdding(false);
+  const submitDraft = async () => {
+    if (!draft.question.trim() || busy) return;
+    setBusy(true); setErr(null);
+    const id = `Q-${String(questions.length + 1).padStart(3, '0')}`;
+    try {
+      if (isLive) {
+        const sb = await CABT_sb();
+        const { error } = await sb.from('open_questions').insert({
+          id,
+          topic: draft.topic || 'General',
+          priority: draft.priority,
+          status: 'open',
+          question: draft.question,
+          context: draft.context || null,
+          owner: draft.owner || null,
+          created_at: CABT_todayIso(),
+        });
+        if (error) throw error;
+      }
+      setDraft({ topic: '', priority: 'medium', question: '', context: '', owner: 'Bobby' });
+      setAdding(false);
+    } catch (e) { setErr(e?.message || 'Save failed'); }
+    setBusy(false);
   };
 
-  const answerIt = (id, answer) => {
-    setQuestions(qs => qs.map(q => q.id === id ? { ...q, status: 'answered', answer, answeredAt: CABT_todayIso() } : q));
+  const answerIt = async (id, answer) => {
+    if (busy) return;
+    setBusy(true); setErr(null);
+    try {
+      if (isLive) {
+        const sb = await CABT_sb();
+        const { error } = await sb.from('open_questions').update({
+          status: 'answered', answer, answered_at: new Date().toISOString(),
+        }).eq('id', id);
+        if (error) throw error;
+      }
+    } catch (e) { setErr(e?.message || 'Save failed'); }
+    setBusy(false);
   };
-  const reopenIt = (id) => {
-    setQuestions(qs => qs.map(q => q.id === id ? { ...q, status: 'open', answer: undefined, answeredAt: undefined } : q));
+  const reopenIt = async (id) => {
+    if (busy) return;
+    setBusy(true); setErr(null);
+    try {
+      if (isLive) {
+        const sb = await CABT_sb();
+        const { error } = await sb.from('open_questions').update({
+          status: 'open', answer: null, answered_at: null,
+        }).eq('id', id);
+        if (error) throw error;
+      }
+    } catch (e) { setErr(e?.message || 'Save failed'); }
+    setBusy(false);
   };
 
   const PRIO = {
@@ -904,6 +936,10 @@ function AdminOpenQuestions({ state, theme }) {
       <Banner tone="info" icon="alert" theme={theme}>
         Decisions still pending from leadership. Answer here once resolved — answers route into the build log.
       </Banner>
+      {err && (
+        <div style={{ background: STATUS.red + '15', color: STATUS.red, border: `1px solid ${STATUS.red}33`,
+                     borderRadius: 8, padding: '10px 12px', fontSize: 13 }}>{err}</div>
+      )}
 
       <div style={{ display: 'flex', gap: 6 }}>
         {[
@@ -980,7 +1016,7 @@ function AdminOpenQuestions({ state, theme }) {
                     </div>
                   )}
                   <div style={{ fontSize: 11, color: theme.inkMuted, marginBottom: 10 }}>
-                    Owner <strong style={{ color: theme.ink }}>{q.owner}</strong> · created {CABT_fmtDate(q.created)}
+                    Owner <strong style={{ color: theme.ink }}>{q.owner}</strong> · created {CABT_fmtDate(q.createdAt || q.created)}
                   </div>
                   {q.status === 'answered' ? (
                     <div>

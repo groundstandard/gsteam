@@ -156,6 +156,7 @@ function App() {
         pending_clients: 'pendingClients',
         cancel_reasons: 'cancelReasons',
         quarter_inputs: 'allQuarterInputs',
+        open_questions: 'openQuestions',
       };
       const key = collectionByTable[table];
       if (!key) return;
@@ -181,7 +182,7 @@ function App() {
       'clients', 'cas', 'sales_team',
       'monthly_metrics', 'growth_events', 'surveys',
       'adjustments', 'weekly_checkins', 'monthly_checkins', 'pending_clients',
-      'cancel_reasons', 'quarter_inputs',
+      'cancel_reasons', 'quarter_inputs', 'open_questions',
     ], apply).then(fn => { if (cancelled) fn?.(); else unsub = fn; });
     return () => { cancelled = true; if (unsub) unsub(); };
   }, [t.apiMode, authedSession]);
