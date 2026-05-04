@@ -114,14 +114,37 @@ function AdminConfig({ state, theme, onUpdate }) {
       </Card>
       <Card theme={theme}>
         <SectionLabel theme={theme}>Attrition & satisfaction</SectionLabel>
-        <Field label="Green attrition floor" theme={theme}><Input type="number" suffix="×" value={local.attritionGreenFloor} onChange={(v) => update('attritionGreenFloor', Number(v))} theme={theme}/></Field>
+        <Field label="Green attrition floor" hint="Cancel rate at or below this scores 1.0. Spec default: 0.03 (3%)." theme={theme}><Input type="number" suffix="×" value={local.attritionGreenFloor} onChange={(v) => update('attritionGreenFloor', Number(v))} theme={theme}/></Field>
         <div style={{ height: 10 }}/>
-        <Field label="Critical attrition ceiling" theme={theme}><Input type="number" suffix="×" value={local.attritionCriticalCeiling} onChange={(v) => update('attritionCriticalCeiling', Number(v))} theme={theme}/></Field>
+        <Field label="Critical attrition ceiling" hint="Cancel rate at or above this scores 0. Spec default: 0.05 (5%)." theme={theme}><Input type="number" suffix="×" value={local.attritionCriticalCeiling} onChange={(v) => update('attritionCriticalCeiling', Number(v))} theme={theme}/></Field>
         <div style={{ height: 10 }}/>
-        <Field label="Satisfaction lookback (months)" theme={theme}><Input type="number" value={local.satisfactionLookbackMonths} onChange={(v) => update('satisfactionLookbackMonths', Number(v))} theme={theme}/></Field>
+        <Field label="Satisfaction lookback (months)" hint="Spec default: 6" theme={theme}><Input type="number" value={local.satisfactionLookbackMonths} onChange={(v) => update('satisfactionLookbackMonths', Number(v))} theme={theme}/></Field>
         <div style={{ height: 10 }}/>
-        <Field label="No-response penalty" theme={theme}><Input type="number" suffix="×" value={local.noResponsePenalty} onChange={(v) => update('noResponsePenalty', Number(v))} theme={theme}/></Field>
+        <Field label="No-response penalty" hint="Default satisfaction when no surveys logged. Spec default: 0.7" theme={theme}><Input type="number" suffix="×" value={local.noResponsePenalty} onChange={(v) => update('noResponsePenalty', Number(v))} theme={theme}/></Field>
       </Card>
+
+      <Card theme={theme}>
+        <SectionLabel theme={theme}>MRR Growth & Lead Cost (Phase 10)</SectionLabel>
+        <Field label="MRR Growth full credit ($/mo)" hint="Quarter-over-quarter MRR delta hitting this earns 1.0 score. Spec default: 750." theme={theme}><Input type="number" prefix="$" value={local.fullCreditMrrGrowth} onChange={(v) => update('fullCreditMrrGrowth', Number(v))} theme={theme}/></Field>
+        <div style={{ height: 10 }}/>
+        <Field label="Lead Cost — best ($)" hint="≤ this scores 1.0. Spec: 5" theme={theme}><Input type="number" prefix="$" value={local.leadCostBest} onChange={(v) => update('leadCostBest', Number(v))} theme={theme}/></Field>
+        <div style={{ height: 10 }}/>
+        <Field label="Lead Cost — great ($)" hint="≤ this scores 0.75. Spec: 10" theme={theme}><Input type="number" prefix="$" value={local.leadCostGreat} onChange={(v) => update('leadCostGreat', Number(v))} theme={theme}/></Field>
+        <div style={{ height: 10 }}/>
+        <Field label="Lead Cost — acceptable ($)" hint="≤ this scores 0.50. Above scores 0. Spec: 20" theme={theme}><Input type="number" prefix="$" value={local.leadCostAcceptable} onChange={(v) => update('leadCostAcceptable', Number(v))} theme={theme}/></Field>
+      </Card>
+
+      <Card theme={theme}>
+        <SectionLabel theme={theme}>Retention & bonus pot (Phase 10)</SectionLabel>
+        <Field label="Retention cliff" hint="Retention rate below this scores 0; linear from cliff to 1.0 retained. Spec default: 0.97." theme={theme}><Input type="number" suffix="×" value={local.retentionCliff} onChange={(v) => update('retentionCliff', Number(v))} theme={theme}/></Field>
+        <div style={{ height: 10 }}/>
+        <Field label="Pot percentage (default)" hint="Used when no quarter_inputs row is set. Spec default: 0.005 (0.5%)." theme={theme}><Input type="number" suffix="×" value={local.potPercentage} onChange={(v) => update('potPercentage', Number(v))} theme={theme}/></Field>
+        <div style={{ height: 10 }}/>
+        <Field label="Agency gross last month (default)" hint="Used as fallback when no quarter_inputs row. Set per-quarter via Admin → Bonus." theme={theme}><Input type="number" prefix="$" value={local.agencyGrossLastMonth} onChange={(v) => update('agencyGrossLastMonth', Number(v))} theme={theme}/></Field>
+        <div style={{ height: 10 }}/>
+        <Field label="Ad spend max score cap" hint="Over-target ad spend earns up to this multiplier. Spec default: 2.0" theme={theme}><Input type="number" suffix="×" value={local.adSpendMaxScoreCap} onChange={(v) => update('adSpendMaxScoreCap', Number(v))} theme={theme}/></Field>
+      </Card>
+
       <Card theme={theme}>
         <SectionLabel theme={theme}>Commission rates</SectionLabel>
         <Field label="Membership revenue rate" theme={theme}><Input type="number" suffix="×" value={local.membershipRevenueRate} onChange={(v) => update('membershipRevenueRate', Number(v))} theme={theme}/></Field>

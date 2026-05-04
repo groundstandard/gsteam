@@ -1628,6 +1628,7 @@ function AdminMore({ theme, navigate, profile, onSignOut }) {
     { name: 'reviews',   icon: 'star',  label: 'Reviews Inbox',   desc: 'Match incoming reviews to clients' },
     { name: 'pending-clients', icon: 'cash', label: 'Pending Clients', desc: 'Approve new Stripe customers' },
     { name: 'formula-inspector', icon: 'chart', label: 'Formula Inspector', desc: 'See exactly how every score is computed' },
+    { name: 'bulk-cadence', icon: 'cal', label: 'Bulk cadence', desc: 'Set weekly/monthly for many clients at once' },
     { name: 'questions', icon: 'alert', label: 'Open Questions',  desc: 'Decisions pending leadership' },
     { name: 'audit-log', icon: 'shield', label: 'Audit Log',       desc: 'Read-only history of changes' },
     { name: 'config',    icon: 'cog',   label: 'Config',          desc: 'Scoring thresholds & quarter window' },
@@ -1695,6 +1696,187 @@ function AdminMore({ theme, navigate, profile, onSignOut }) {
       <div style={{ fontSize: 11, color: theme.inkMuted, textAlign: 'center', padding: '12px 0', letterSpacing: 0.4 }}>
         gsTeam Scoreboard · Admin · v0.2
       </div>
+    </div>
+  );
+}
+
+// ── Bulk Cadence Editor ────────────────────────────────────────────────────
+// Bobby's 2026-05-05 ask: "I want to update [cadence] for ALL clients at the
+// same time. Instead of going in ALL accounts to change one at a time."
+//
+// Multi-select all/by-cadence/individually + apply weekly OR monthly to the
+// selection. Writes go through CABT_api.updateClient per client; realtime
+// then propagates back. For a 50-client batch, ~5-10 sec end-to-end.
+function AdminBulkCadence({ state, theme, navigate }) {
+  const allClients = (state.clients || []).filter(c => !c.cancelDate)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const [selected, setSelected] = React.useState(() => new Set());
+  const [filter, setFilter] = React.useState('all'); // all | weekly | monthly
+  const [busy, setBusy] = React.useState(false);
+  const [done, setDone] = React.useState(null);
+  const [errMsg, setErrMsg] = React.useState(null);
+
+  const filtered = allClients.filter(c => {
+    const cad = c.loggingCadence || 'monthly';
+    if (filter === 'all')     return true;
+    if (filter === 'weekly')  return cad === 'weekly';
+    if (filter === 'monthly') return cad === 'monthly';
+    return true;
+  });
+
+  const counts = {
+    all:     allClients.length,
+    weekly:  allClients.filter(c => (c.loggingCadence || 'monthly') === 'weekly').length,
+    monthly: allClients.filter(c => (c.loggingCadence || 'monthly') === 'monthly').length,
+  };
+
+  const toggle = (id) => {
+    setSelected(s => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleAll = () => {
+    setSelected(s => {
+      if (filtered.every(c => s.has(c.id))) {
+        const next = new Set(s);
+        filtered.forEach(c => next.delete(c.id));
+        return next;
+      }
+      const next = new Set(s);
+      filtered.forEach(c => next.add(c.id));
+      return next;
+    });
+  };
+
+  const apply = async (cadence) => {
+    if (busy) return;
+    if (selected.size === 0) {
+      setErrMsg('Select at least one client first.');
+      return;
+    }
+    setBusy(true); setErrMsg(null); setDone(null);
+    try {
+      const sb = await CABT_sb();
+      const ids = Array.from(selected);
+      // Single bulk UPDATE — much faster than per-row when many clients.
+      const { error } = await sb.from('clients')
+        .update({ logging_cadence: cadence })
+        .in('id', ids);
+      if (error) throw error;
+      setDone(`Set ${ids.length} client${ids.length === 1 ? '' : 's'} to ${cadence}`);
+      setSelected(new Set());
+    } catch (e) {
+      setErrMsg(e?.message || 'Bulk update failed');
+    }
+    setBusy(false);
+  };
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every(c => selected.has(c.id));
+
+  return (
+    <div style={{ padding: '8px 16px 100px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <Card theme={theme} padding={14}>
+        <SectionLabel theme={theme}>Bulk cadence editor</SectionLabel>
+        <div style={{ fontSize: 12, color: theme.inkMuted, marginTop: 4, marginBottom: 10, lineHeight: 1.5 }}>
+          Select multiple clients and apply weekly or monthly cadence in one shot. Cadence controls only how often CAs log narrative check-ins — monthly_metrics are always monthly regardless.
+        </div>
+
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {[
+            { v: 'all',     label: `All · ${counts.all}` },
+            { v: 'monthly', label: `Monthly · ${counts.monthly}` },
+            { v: 'weekly',  label: `Weekly · ${counts.weekly}` },
+          ].map(f => (
+            <button key={f.v} onClick={() => setFilter(f.v)} style={{
+              padding: '7px 12px', fontSize: 12, fontWeight: 600, borderRadius: 999,
+              background: filter === f.v ? theme.ink : theme.surface,
+              color: filter === f.v ? (theme.accentInk || '#fff') : theme.ink,
+              border: `1px solid ${filter === f.v ? theme.ink : theme.rule}`,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>{f.label}</button>
+          ))}
+        </div>
+      </Card>
+
+      {/* Action bar */}
+      <Card theme={theme} padding={12}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={toggleAll} style={{
+            background: 'transparent', border: `1px solid ${theme.rule}`,
+            color: theme.ink, fontSize: 12, fontWeight: 600,
+            padding: '6px 10px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+          }}>
+            {allFilteredSelected ? 'Clear filter selection' : `Select all in filter (${filtered.length})`}
+          </button>
+          <div style={{ flex: 1, fontSize: 12, color: theme.inkMuted, textAlign: 'right' }}>
+            <strong style={{ color: theme.ink }}>{selected.size}</strong> selected
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <Button theme={theme} variant="primary" disabled={busy || selected.size === 0} onClick={() => apply('monthly')}>
+            Set selected → Monthly
+          </Button>
+          <Button theme={theme} variant="primary" disabled={busy || selected.size === 0} onClick={() => apply('weekly')}>
+            Set selected → Weekly
+          </Button>
+        </div>
+        {done && (
+          <div style={{ marginTop: 10, padding: '8px 12px', background: STATUS.green + '15',
+                       border: `1px solid ${STATUS.green}33`, borderRadius: 6, fontSize: 12, color: '#1F6E1F' }}>
+            ✓ {done}
+          </div>
+        )}
+        {errMsg && (
+          <div style={{ marginTop: 10, padding: '8px 12px', background: STATUS.red + '15',
+                       border: `1px solid ${STATUS.red}33`, borderRadius: 6, fontSize: 12, color: STATUS.red }}>
+            {errMsg}
+          </div>
+        )}
+      </Card>
+
+      {/* Client list */}
+      <Card theme={theme} padding={0}>
+        {filtered.length === 0 && (
+          <div style={{ padding: 20, color: theme.inkMuted, fontSize: 13, textAlign: 'center' }}>
+            No clients in this filter.
+          </div>
+        )}
+        {filtered.map(c => {
+          const cad = c.loggingCadence || 'monthly';
+          const isSel = selected.has(c.id);
+          return (
+            <button key={c.id} onClick={() => toggle(c.id)} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              width: '100%', padding: '12px 14px',
+              borderTop: `1px solid ${theme.rule}`,
+              background: isSel ? (theme.accentSoft || 'rgba(215,255,61,0.08)') : 'transparent',
+              border: 'none', borderTop: `1px solid ${theme.rule}`,
+              fontFamily: 'inherit', cursor: 'pointer', textAlign: 'left',
+            }}>
+              <div style={{
+                width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                border: `1.5px solid ${isSel ? theme.accent : theme.rule}`,
+                background: isSel ? theme.accent : 'transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {isSel && <Icon name="check" size={12} color={theme.bg || '#0B0E14'} stroke={3}/>}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: theme.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+                <div style={{ fontSize: 11, color: theme.inkMuted }}>{c.id}</div>
+              </div>
+              <span style={{
+                fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
+                background: cad === 'weekly' ? (theme.accent || '#D7FF3D') : theme.rule,
+                color: cad === 'weekly' ? (theme.bg || '#0B0E14') : theme.ink,
+                textTransform: 'uppercase', letterSpacing: 0.4,
+              }}>{cad}</span>
+            </button>
+          );
+        })}
+      </Card>
     </div>
   );
 }
@@ -1914,5 +2096,5 @@ function AdminFormulaInspector({ state, theme, navigate }) {
 
 Object.assign(window, {
   AdminAnnualBonus, AdminRevenueLedger, AdminClientRollup, AdminClientCalc, AdminOpenQuestions, AdminAuditLog, AdminMore,
-  AdminAddClient, AdminPendingClients, AdminFormulaInspector, CABT_nextClientId: nextClientId,
+  AdminAddClient, AdminPendingClients, AdminFormulaInspector, AdminBulkCadence, CABT_nextClientId: nextClientId,
 });

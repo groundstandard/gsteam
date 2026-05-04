@@ -283,7 +283,24 @@ function App() {
       showToast('Rates updated');
     }
   };
-  const updateConfig = (cfg) => { setState(s => ({ ...s, config: cfg })); showToast('Config saved'); navigate('back'); };
+  const updateConfig = async (cfg) => {
+    // Optimistic local update first
+    setState(s => ({ ...s, config: cfg }));
+    if (CABT_getApiMode() === 'supabase') {
+      try {
+        const sb = await CABT_sb();
+        const { error } = await sb.from('config').update({
+          values: cfg, updated_at: new Date().toISOString(),
+        }).eq('id', 1);
+        if (error) throw error;
+        showToast('Config saved');
+        navigate('back');
+      } catch (e) { showToast('Save failed: ' + (e?.message || 'unknown')); console.error('[updateConfig]', e); }
+    } else {
+      showToast('Config saved');
+      navigate('back');
+    }
+  };
   const syncNow = () => { setPendingSync(0); setIsOffline(false); setTweak('demoOffline', false); showToast('Synced ✓'); };
   const resetData = () => { CABT_resetState(); setState(CABT_loadState()); showToast('Reset to seed'); };
 
@@ -385,6 +402,7 @@ function App() {
       case 'questions':   return <AdminOpenQuestions state={state} theme={theme}/>;
       case 'audit-log':   return <AdminAuditLog state={state} theme={theme}/>;
       case 'formula-inspector': return <AdminFormulaInspector state={state} theme={theme} navigate={navigate}/>;
+      case 'bulk-cadence': return <AdminBulkCadence state={state} theme={theme} navigate={navigate}/>;
       case 'config':      return <AdminConfig state={state} theme={theme} onUpdate={updateConfig}/>;
       case 'roster':      return <AdminRoster state={state} theme={theme} onReload={reloadLive} onToast={showToast}/>;
       case 'more':        return <AdminMore theme={theme} navigate={navigate} profile={authedProfile} onSignOut={t.apiMode === 'supabase' && authedSession ? () => askConfirm({
