@@ -400,11 +400,32 @@ function caScorecard(ca, state) {
     ? clamp(totalPoints / maxPoints, 0, 1)
     : null;
 
+  // ── Book completeness — data coverage gate on Performance ──────────────
+  // The UI promises "If this is below 100%, your Performance bonus is
+  // reduced proportionally." We honor that here: the displayed Performance
+  // bucket gets multiplied by bookCompleteness before going into the
+  // composite. The raw per-client perf scores are still computed per spec
+  // (skip empties); this is the CA-level data-coverage drag.
+  const monthsInQuarter = Math.max(monthsBetween(qStartIso, qEndIso) + 1, 1);
+  const expected = myClients.length * monthsInQuarter;
+  const filled = allMetrics.filter(m => {
+    const c = allClients.find(cl => cl.id === m.clientId);
+    return c && c.assignedCA === ca.id && m.month >= qStartIso && m.month <= qEndIso;
+  }).length;
+  const bookCompleteness = expected > 0 ? clamp(filled / expected, 0, 1) : 0;
+
+  // Performance, gated by data coverage. If 1/50 client-months are filled,
+  // performance contribution drops to ~2% of its raw value — matches the
+  // UI copy and the legacy Sheet's intuition.
+  const performanceGated = performance != null
+    ? performance * bookCompleteness
+    : null;
+
   // ── Composite ───────────────────────────────────────────────────────────
   // ⅓ × each bucket. Null buckets contribute 0 to the average ONLY when
   // there's no data to score them (matches "empty inputs don't penalize"
   // at the bucket level — null vs zero matters for display).
-  const buckets = [performance, retention, growth];
+  const buckets = [performanceGated, retention, growth];
   const validBuckets = buckets.filter(v => v != null && Number.isFinite(v));
   const composite = validBuckets.length
     ? validBuckets.reduce((a, b) => a + b, 0) / validBuckets.length
@@ -435,23 +456,16 @@ function caScorecard(ca, state) {
   const caPot = totalPot * mrrShare;
   const finalPayout = Math.round(caPot * composite);
 
-  // Book completeness (display-only signal; not a hard gate on payout in
-  // the rewrite — Bobby's screenshot showed the gate making real numbers
-  // hard to interpret).
-  const monthsInQuarter = Math.max(monthsBetween(qStartIso, qEndIso) + 1, 1);
-  const expected = myClients.length * monthsInQuarter;
-  const filled = allMetrics.filter(m => {
-    const c = allClients.find(cl => cl.id === m.clientId);
-    return c && c.assignedCA === ca.id && m.month >= qStartIso && m.month <= qEndIso;
-  }).length;
-  const bookCompleteness = expected > 0 ? clamp(filled / expected, 0, 1) : 0;
-
   return {
     composite: Number.isFinite(composite) ? composite : 0,
     finalPayout: Number.isFinite(finalPayout) ? finalPayout : 0,
     maxPayout: Math.round(caPot),
     bookCompleteness: Number.isFinite(bookCompleteness) ? bookCompleteness : 0,
-    performance: performance != null && Number.isFinite(performance) ? performance : 0,
+    // Display the GATED performance so the UI matches the bucket value
+    // that fed into composite. Raw (ungated) is preserved as performanceRaw
+    // for diagnostics.
+    performance: performanceGated != null && Number.isFinite(performanceGated) ? performanceGated : 0,
+    performanceRaw: performance != null && Number.isFinite(performance) ? performance : 0,
     retention:   retention   != null && Number.isFinite(retention)   ? retention   : 0,
     growth:      growth      != null && Number.isFinite(growth)      ? growth      : 0,
     // diagnostic counts so admins can see WHY a score is what it is
