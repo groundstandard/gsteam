@@ -10,7 +10,17 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
   const tenureMonths = Math.max(1, Math.round(
     (new Date() - new Date(client.signDate)) / (1000 * 60 * 60 * 24 * 30)
   ));
-  const cMetrics = state.monthlyMetrics.filter(m => m.clientId === client.id).sort((a,b) => b.month.localeCompare(a.month));
+  // Metrics — show monthly AND weekly entries for this client, newest first.
+  // Weekly entries are sorted by weekStart; monthly by month. Both are tappable
+  // for editing via LogMetricsForm (which auto-detects kind from the row id).
+  const cMonthlyMetrics = (state.monthlyMetrics || [])
+    .filter(m => m.clientId === client.id)
+    .map(m => ({ ...m, _kind: 'monthly', _periodKey: m.month }));
+  const cWeeklyMetrics = (state.weeklyMetrics || [])
+    .filter(w => w.clientId === client.id)
+    .map(w => ({ ...w, _kind: 'weekly', _periodKey: w.weekStart }));
+  const cMetrics = [...cMonthlyMetrics, ...cWeeklyMetrics]
+    .sort((a, b) => (b._periodKey || '').localeCompare(a._periodKey || ''));
   const cEvents = state.growthEvents.filter(e => e.clientId === client.id).sort((a,b) => b.date.localeCompare(a.date));
   const cSurveys = state.surveys.filter(s => s.clientId === client.id).sort((a,b) => b.date.localeCompare(a.date));
   const cWeekly  = (state.weeklyCheckins  || []).filter(w => w.clientId === client.id);
@@ -19,7 +29,7 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
     ...cWeekly.map(w => ({ kind: 'weekly',  date: w.weekStart, item: w })),
     ...cMonthly.map(m => ({ kind: 'monthly', date: m.month,    item: m })),
   ].sort((a, b) => b.date.localeCompare(a.date));
-  const lastMetric = cMetrics[0];
+  const lastMetric = cMonthlyMetrics.sort((a, b) => (b.month || '').localeCompare(a.month || ''))[0];
   const cadence = client.loggingCadence || 'monthly';
 
   return (
@@ -68,13 +78,17 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Card theme={theme}>
             <SectionLabel theme={theme}>Sub-scores</SectionLabel>
+            {/* 5 Performance sub-scores per Formula Guide. Aggregated over the
+                quarter (3 months together) — not last-month-only. Empty data
+                renders as '—' (gray) instead of showing legacy synthetic
+                baselines (the "Growth 60 / Satisfaction 70 with no data" bug
+                Bobby flagged 2026-05-04). */}
             {[
-              ['revenue',      'Revenue'],
-              ['adEfficiency', 'Ad efficiency'],
-              ['funnel',       'Funnel'],
-              ['attrition',    'Attrition'],
-              ['satisfaction', 'Satisfaction'],
-              ['growth',       'Growth'],
+              ['mrrGrowth', 'MRR Growth'],
+              ['leadCost',  'Lead Cost'],
+              ['adSpend',   'Ad Spend'],
+              ['funnel',    'Funnel'],
+              ['attrition', 'Attrition'],
             ].map(([k, label]) => {
               const v = sub[k];
               const s = CABT_scoreToStatus(v);
@@ -88,7 +102,26 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
                 </div>
               );
             })}
+            <div style={{ fontSize: 11, color: theme.inkMuted, marginTop: 8, lineHeight: 1.4 }}>
+              "—" means no data yet for that metric this quarter. Empty data is skipped, not penalized.
+            </div>
           </Card>
+
+          {sub.satisfaction != null && (
+            <Card theme={theme}>
+              <SectionLabel theme={theme}>Satisfaction (display only)</SectionLabel>
+              <div style={{ display: 'flex', alignItems: 'center', padding: '10px 0', gap: 10 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 5, background: STATUS[CABT_scoreToStatus(sub.satisfaction)], flexShrink: 0 }}/>
+                <span style={{ flex: 1, fontSize: 14, color: theme.ink }}>From {state.surveys.filter(s => s.clientId === client.id).length} survey(s)</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: theme.ink, fontVariantNumeric: 'tabular-nums' }}>
+                  {(sub.satisfaction*100).toFixed(0)}
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: theme.inkMuted, marginTop: 4, lineHeight: 1.4 }}>
+                Satisfaction is a separate display metric per the Formula Guide — not part of the 5 Performance sub-scores above.
+              </div>
+            </Card>
+          )}
           <Card theme={theme}>
             <SectionLabel theme={theme}>Contract</SectionLabel>
             <KV theme={theme} label="Sign date"  value={CABT_fmtDate(client.signDate)} />
@@ -146,26 +179,54 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
       {tab === 'metrics' && (
         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Button theme={theme} icon="plus" fullWidth size="md"
-                  onClick={() => navigate('log-metrics', { clientId })}>Log a month</Button>
-          {cMetrics.length === 0 && <EmptyState theme={theme} text="No monthly metrics yet." />}
-          {cMetrics.map(m => (
-            <Card theme={theme} key={m.id} padding={14}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: theme.ink, fontFamily: theme.serif, letterSpacing: -0.2 }}>{CABT_fmtMonth(m.month)}</div>
-                <div style={{ fontSize: 11, color: theme.inkMuted, letterSpacing: 0.4 }}>MRR <span style={{ color: theme.ink, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{CABT_fmtMoney(m.clientMRR)}</span></div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, fontSize: 11 }}>
-                <Stat theme={theme} k="Leads" v={m.leadsGenerated} />
-                <Stat theme={theme} k="Booked" v={m.apptsBooked} />
-                <Stat theme={theme} k="Showed" v={m.leadsShowed} />
-                <Stat theme={theme} k="Signed" v={m.leadsSigned} />
-                <Stat theme={theme} k="Ad spend" v={CABT_fmtMoney(m.adSpend)} />
-                <Stat theme={theme} k="Lead $" v={CABT_fmtMoney(m.leadCost)} />
-                <Stat theme={theme} k="Gross rev" v={CABT_fmtMoney(m.clientGrossRevenue)} />
-                <Stat theme={theme} k="Cancel" v={m.studentsCancelled} />
-              </div>
-            </Card>
-          ))}
+                  onClick={() => navigate('log-metrics', { clientId })}>
+            {cadence === 'weekly' ? 'Log a week' : 'Log a month'}
+          </Button>
+          {cMetrics.length === 0 && <EmptyState theme={theme} text="No metrics yet." />}
+          {cMetrics.map(m => {
+            const isWeekly = m._kind === 'weekly';
+            const periodLabel = isWeekly ? `Week of ${CABT_fmtDate(m.weekStart)}` : CABT_fmtMonth(m.month);
+            return (
+              <Card theme={theme} key={m.id} padding={14}
+                    onClick={() => navigate('log-metrics', { clientId, editingId: m.id })}
+                    style={{ cursor: 'pointer' }}
+                    role="button"
+                    aria-label={`Edit ${periodLabel}`}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: theme.ink, fontFamily: theme.serif, letterSpacing: -0.2 }}>{periodLabel}</div>
+                    {isWeekly && (
+                      <span style={{
+                        fontSize: 9, fontWeight: 800, letterSpacing: 0.5,
+                        padding: '2px 6px', borderRadius: 8,
+                        background: theme.bgSoft || 'rgba(255,255,255,0.05)',
+                        color: theme.inkMuted, textTransform: 'uppercase',
+                      }}>weekly</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ fontSize: 11, color: theme.inkMuted, letterSpacing: 0.4 }}>
+                      Rev <span style={{ color: theme.ink, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{CABT_fmtMoney(m.clientGrossRevenue || m.clientMRR)}</span>
+                    </div>
+                    <Icon name="edit" size={14} color={theme.inkMuted} />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, fontSize: 11 }}>
+                  <Stat theme={theme} k="Leads" v={m.leadsGenerated} />
+                  <Stat theme={theme} k="Booked" v={m.apptsBooked} />
+                  <Stat theme={theme} k="Showed" v={m.leadsShowed} />
+                  <Stat theme={theme} k="Signed" v={m.leadsSigned} />
+                  <Stat theme={theme} k="Ad spend" v={CABT_fmtMoney(m.adSpend)} />
+                  <Stat theme={theme} k="Lead $" v={CABT_fmtMoney(m.leadCost)} />
+                  <Stat theme={theme} k="Students" v={m.totalStudentsStart} />
+                  <Stat theme={theme} k="Cancel" v={m.studentsCancelled} />
+                </div>
+                <div style={{ fontSize: 10, color: theme.inkMuted, marginTop: 8, textAlign: 'right', letterSpacing: 0.3 }}>
+                  Tap to edit
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -175,10 +236,17 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
                   onClick={() => navigate('log-event', { clientId })}>Log an event</Button>
           {cEvents.length === 0 && <EmptyState theme={theme} text="No growth events yet." />}
           {cEvents.map(e => (
-            <Card theme={theme} key={e.id} padding={14}>
+            <Card theme={theme} key={e.id} padding={14}
+                  onClick={() => navigate('log-event', { clientId, editingId: e.id })}
+                  style={{ cursor: 'pointer' }}
+                  role="button"
+                  aria-label={`Edit ${e.eventType}`}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: theme.ink }}>{e.eventType}</span>
-                <span style={{ fontSize: 12, color: theme.inkMuted }}>{CABT_fmtDate(e.date)}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: theme.inkMuted }}>{CABT_fmtDate(e.date)}</span>
+                  <Icon name="edit" size={14} color={theme.inkMuted} />
+                </div>
               </div>
               {e.notes && <div style={{ fontSize: 13, color: theme.inkSoft, lineHeight: 1.4 }}>{e.notes}</div>}
               {e.saleTotal > 0 && (
@@ -199,14 +267,21 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
           {cSurveys.map(s => {
             const avg = (s.overall + s.responsiveness + s.followThrough + s.communication) / 4;
             return (
-              <Card theme={theme} key={s.id} padding={14}>
+              <Card theme={theme} key={s.id} padding={14}
+                    onClick={() => navigate('log-survey', { clientId, editingId: s.id })}
+                    style={{ cursor: 'pointer' }}
+                    role="button"
+                    aria-label="Edit survey">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <div style={{ display: 'flex', gap: 2 }}>
                     {[1,2,3,4,5].map(n => (
                       <Icon key={n} name={n <= Math.round(avg) ? 'star-fill' : 'star'} size={14} color={theme.gold} />
                     ))}
                   </div>
-                  <span style={{ fontSize: 12, color: theme.inkMuted }}>{CABT_fmtDate(s.date)}{s.anonymous && ' · anon'}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: theme.inkMuted }}>{CABT_fmtDate(s.date)}{s.anonymous && ' · anon'}</span>
+                    <Icon name="edit" size={14} color={theme.inkMuted} />
+                  </div>
                 </div>
                 {s.comment && <div style={{ fontFamily: theme.serif, fontSize: 14, fontStyle: 'italic', color: theme.inkSoft, lineHeight: 1.4 }}>"{s.comment}"</div>}
               </Card>

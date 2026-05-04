@@ -275,7 +275,25 @@ function App() {
       queueOrApply(mutator, msg);
     }
   };
-  const submitEvent = (row) => queueOrApply(s => ({ ...s, growthEvents: [...s.growthEvents, row] }), 'Event saved');
+  const submitEvent = async (row, isEdit) => {
+    const mutator = (s) => ({
+      ...s,
+      growthEvents: isEdit
+        ? (s.growthEvents || []).map(e => e.id === row.id ? row : e)
+        : [...(s.growthEvents || []), row],
+    });
+    if (CABT_getApiMode() === 'supabase') {
+      setState(mutator);
+      try {
+        if (isEdit) await CABT_api.updateEvent(row.id, row);
+        else        await CABT_api.submitEvent(row);
+        showToast('Event saved');
+      } catch (e) { showToast('Save failed'); console.error('[submitEvent]', e); }
+      navigate('back');
+    } else {
+      queueOrApply(mutator, 'Event saved');
+    }
+  };
   const submitCheckin = async (row, cadence) => {
     if (CABT_getApiMode() === 'supabase') {
       try {
@@ -292,7 +310,25 @@ function App() {
       navigate('back');
     }
   };
-  const submitSurvey = (row) => queueOrApply(s => ({ ...s, surveys: [...s.surveys, row] }), 'Survey saved');
+  const submitSurvey = async (row, isEdit) => {
+    const mutator = (s) => ({
+      ...s,
+      surveys: isEdit
+        ? (s.surveys || []).map(v => v.id === row.id ? row : v)
+        : [...(s.surveys || []), row],
+    });
+    if (CABT_getApiMode() === 'supabase') {
+      setState(mutator);
+      try {
+        if (isEdit) await CABT_api.updateSurvey(row.id, row);
+        else        await CABT_api.submitSurvey(row);
+        showToast('Survey saved');
+      } catch (e) { showToast('Save failed'); console.error('[submitSurvey]', e); }
+      navigate('back');
+    } else {
+      queueOrApply(mutator, 'Survey saved');
+    }
+  };
   const submitContract = (row) => queueOrApply(s => ({ ...s, clients: [...s.clients, row] }), 'Contract logged');
   const submitClient = (row) => queueOrApply(s => ({
     ...s,
@@ -408,8 +444,8 @@ function App() {
         case 'book': return <CABook state={state} ca={ca} theme={theme} navigate={navigate} initialFilter={route.params.filter}/>;
         case 'client-detail': return <ClientDetail state={state} ca={ca} theme={theme} clientId={route.params.clientId} navigate={navigate}/>;
         case 'log-metrics': return <LogMetricsForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitMetrics}/>;
-        case 'log-event': return <LogEventForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} navigate={navigate} onSubmit={submitEvent}/>;
-        case 'log-survey': return <LogSurveyForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} navigate={navigate} onSubmit={submitSurvey}/>;
+        case 'log-event': return <LogEventForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitEvent}/>;
+        case 'log-survey': return <LogSurveyForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitSurvey}/>;
         case 'log-checkin': return <LogCheckinForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} navigate={navigate} onSubmit={submitCheckin}/>;
         case 'scorecard': return <CAScorecard state={state} ca={ca} theme={theme} viz={t.scorecardViz}/>;
         case 'profile': return <CAProfile state={state} ca={ca} theme={theme} navigate={navigate} profile={authedProfile} onSignOut={t.apiMode === 'supabase' && authedProfile ? () => askConfirm({

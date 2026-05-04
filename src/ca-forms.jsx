@@ -91,16 +91,23 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
 
   const lastForInit = getLastForClient(initialClient, initialCadence);
 
-  const [form, setForm] = React.useState(editing ? { ...editing } : {
+  // Bobby 2026-05-04: "Client MRR" and "Client gross revenue" were the same
+  // thing in his head ("Total money collected, recurring or not"). Form now
+  // exposes ONE field — totalRevenue — that writes to BOTH columns on submit
+  // so scoring (which still references both internally) keeps working.
+  const initialRevenue = editing
+    ? (editing.clientGrossRevenue || editing.clientMRR || '')
+    : (lastForInit?.clientGrossRevenue || lastForInit?.clientMRR || '');
+
+  const [form, setForm] = React.useState(editing ? { ...editing, totalRevenue: initialRevenue } : {
     clientId: initialClient,
     cadence: initialCadence,
     // Use the right period field for this cadence; the other stays empty.
     month:     initialCadence === 'monthly' ? CABT_currentMonthIso() : '',
     weekStart: initialCadence === 'weekly'  ? isoMondayOf()          : '',
-    clientMRR: lastForInit?.clientMRR ?? '',
+    totalRevenue: initialRevenue,
     leadCost: lastForInit?.leadCost ?? '',
     adSpend: lastForInit?.adSpend ?? '',
-    clientGrossRevenue: lastForInit?.clientGrossRevenue ?? '',
     leadsGenerated: '',
     apptsBooked: '',
     leadsShowed: '',
@@ -137,10 +144,9 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
         }
         const last = getLastForClient(value, newCadence);
         if (last) {
-          next.clientMRR = next.clientMRR || last.clientMRR;
+          next.totalRevenue = next.totalRevenue || last.clientGrossRevenue || last.clientMRR;
           next.leadCost = next.leadCost || last.leadCost;
           next.adSpend = next.adSpend || last.adSpend;
-          next.clientGrossRevenue = next.clientGrossRevenue || last.clientGrossRevenue;
           next.totalStudentsStart = next.totalStudentsStart || last.totalStudentsStart;
         }
       }
@@ -154,7 +160,7 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
     if (!form.clientId) e.clientId = 'Required';
     const periodField = activeCadence === 'weekly' ? 'weekStart' : 'month';
     if (!form[periodField]) e[periodField] = 'Required';
-    if (form.clientMRR === '' || form.clientMRR == null) e.clientMRR = 'Required';
+    if (form.totalRevenue === '' || form.totalRevenue == null) e.totalRevenue = 'Required';
 
     // Duplicate check (same client + same period, in the matching table)
     if (form.clientId && form[periodField]) {
@@ -206,15 +212,19 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
     const periodFields = isWeekly
       ? { weekStart: form.weekStart }
       : { month: CABT_firstOfMonth(form.month) };
+    // Single revenue value writes to BOTH client_mrr AND client_gross_revenue
+    // so backend scoring (pot share uses MRR; ad-spend efficiency uses gross)
+    // stays consistent without two confusing fields in the UI. Bobby 2026-05-04.
+    const revenue = num(form.totalRevenue);
     const row = {
       id: editingId || `${idPrefix}-${Date.now()}`,
       caId: ca.id,
       clientId: form.clientId,
       ...periodFields,
-      clientMRR: num(form.clientMRR),
+      clientMRR: revenue,
+      clientGrossRevenue: revenue,
       leadCost: num(form.leadCost),
       adSpend: num(form.adSpend),
-      clientGrossRevenue: num(form.clientGrossRevenue),
       leadsGenerated: num(form.leadsGenerated),
       apptsBooked: num(form.apptsBooked),
       leadsShowed: num(form.leadsShowed),
@@ -230,7 +240,7 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
   const periodFilled = activeCadence === 'weekly' ? !!form.weekStart : !!form.month;
   const sectionDone = {
     ident: !!form.clientId && periodFilled,
-    money: form.clientMRR !== '' && form.adSpend !== '' && form.clientGrossRevenue !== '',
+    money: form.totalRevenue !== '' && form.adSpend !== '',
     funnel: ['leadsGenerated','apptsBooked','leadsShowed','leadsSigned'].every(k => form[k] !== ''),
     attrition: form.totalStudentsStart !== '' && form.studentsCancelled !== '',
   };
@@ -308,18 +318,17 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
       </SectionCard>
 
       <SectionCard {...sectionProps('money')} title="Revenue & spend"
-        doneLabel={sectionDone.money ? `MRR ${CABT_fmtMoney(form.clientMRR)} · Ad ${CABT_fmtMoney(form.adSpend)}` : 'Tap to fill'}>
-        <Field label="Client MRR" hint="Recurring monthly subscription only (Stripe MRR). Excludes setup, one-time, add-ons." required error={errors.clientMRR} theme={theme}>
-          <Input type="number" inputmode="decimal" prefix="$" value={form.clientMRR} onChange={(v) => updateForm('clientMRR', v)} theme={theme} />
+        doneLabel={sectionDone.money ? `Rev ${CABT_fmtMoney(form.totalRevenue)} · Ad ${CABT_fmtMoney(form.adSpend)}` : 'Tap to fill'}>
+        <Field label={activeCadence === 'weekly' ? 'Total revenue this week' : 'Total monthly revenue'}
+               hint="Total money collected this period — recurring + one-time + add-ons. Drives both bonus-pot share and ad-spend efficiency."
+               required error={errors.totalRevenue} theme={theme}>
+          <Input type="number" inputmode="decimal" prefix="$" value={form.totalRevenue} onChange={(v) => updateForm('totalRevenue', v)} theme={theme} />
         </Field>
         <Field label="Lead cost" theme={theme}>
           <Input type="number" inputmode="decimal" prefix="$" value={form.leadCost} onChange={(v) => updateForm('leadCost', v)} theme={theme} />
         </Field>
         <Field label="Ad spend" theme={theme}>
           <Input type="number" inputmode="decimal" prefix="$" value={form.adSpend} onChange={(v) => updateForm('adSpend', v)} theme={theme} />
-        </Field>
-        <Field label="Client gross revenue" hint="Total monthly billings INCLUDING setup, one-time fees, and add-ons. Drives ad-spend efficiency calc. May equal MRR for clients with no one-time charges." theme={theme}>
-          <Input type="number" inputmode="decimal" prefix="$" value={form.clientGrossRevenue} onChange={(v) => updateForm('clientGrossRevenue', v)} theme={theme} />
         </Field>
       </SectionCard>
 
@@ -409,9 +418,17 @@ function FormShell({ theme, children, gap = 14 }) {
 }
 
 // ── Log Growth Event ───────────────────────────────────────────────────────
-function LogEventForm({ state, ca, theme, presetClientId, navigate, onSubmit }) {
+function LogEventForm({ state, ca, theme, presetClientId, navigate, onSubmit, editingId }) {
   const myClients = state.clients.filter(c => c.assignedCA === ca.id && !c.cancelDate);
-  const [form, setForm] = React.useState({
+  const editing = editingId ? (state.growthEvents || []).find(e => e.id === editingId) : null;
+  const [form, setForm] = React.useState(editing ? {
+    date: editing.date,
+    clientId: editing.clientId,
+    eventType: editing.eventType,
+    saleTotal: editing.saleTotal != null ? String(editing.saleTotal) : '',
+    costToUs:  editing.costToUs  != null ? String(editing.costToUs)  : '',
+    notes:     editing.notes || '',
+  } : {
     date: CABT_todayIso(),
     clientId: presetClientId || '',
     eventType: '',
@@ -435,7 +452,7 @@ function LogEventForm({ state, ca, theme, presetClientId, navigate, onSubmit }) 
   const submit = () => {
     if (!validate()) return;
     onSubmit({
-      id: `GE-${Date.now()}`,
+      id: editingId || `GE-${Date.now()}`,
       date: form.date,
       clientId: form.clientId,
       eventType: form.eventType,
@@ -443,7 +460,7 @@ function LogEventForm({ state, ca, theme, presetClientId, navigate, onSubmit }) 
       costToUs: showSale ? Number(form.costToUs || 0) : 0,
       notes: form.notes,
       loggedBy: ca.id,
-    });
+    }, !!editing);
   };
   return (
     <FormShell theme={theme}>
@@ -472,16 +489,26 @@ function LogEventForm({ state, ca, theme, presetClientId, navigate, onSubmit }) 
       </Field>
       <StickyBar theme={theme}>
         <Button theme={theme} variant="secondary" onClick={() => navigate('back')}>Cancel</Button>
-        <Button theme={theme} variant="primary" fullWidth onClick={submit}>Save event</Button>
+        <Button theme={theme} variant="primary" fullWidth onClick={submit}>{editing ? 'Save changes' : 'Save event'}</Button>
       </StickyBar>
     </FormShell>
   );
 }
 
 // ── Log Survey Response ────────────────────────────────────────────────────
-function LogSurveyForm({ state, ca, theme, presetClientId, navigate, onSubmit }) {
+function LogSurveyForm({ state, ca, theme, presetClientId, navigate, onSubmit, editingId }) {
   const myClients = state.clients.filter(c => c.assignedCA === ca.id && !c.cancelDate);
-  const [form, setForm] = React.useState({
+  const editing = editingId ? (state.surveys || []).find(s => s.id === editingId) : null;
+  const [form, setForm] = React.useState(editing ? {
+    date: editing.date,
+    clientId: editing.clientId,
+    overall: editing.overall || 0,
+    responsiveness: editing.responsiveness || 0,
+    followThrough: editing.followThrough || 0,
+    communication: editing.communication || 0,
+    anonymous: !!editing.anonymous,
+    comment: editing.comment || '',
+  } : {
     date: CABT_todayIso(),
     clientId: presetClientId || '',
     overall: 0,
@@ -504,7 +531,7 @@ function LogSurveyForm({ state, ca, theme, presetClientId, navigate, onSubmit })
   };
   const submit = () => {
     if (!validate()) return;
-    onSubmit({ id: `SR-${Date.now()}`, ...form, submittedBy: ca.id });
+    onSubmit({ id: editingId || `SR-${Date.now()}`, ...form, submittedBy: ca.id }, !!editing);
   };
   return (
     <FormShell theme={theme}>
@@ -540,7 +567,7 @@ function LogSurveyForm({ state, ca, theme, presetClientId, navigate, onSubmit })
       </Field>
       <StickyBar theme={theme}>
         <Button theme={theme} variant="secondary" onClick={() => navigate('back')}>Cancel</Button>
-        <Button theme={theme} variant="primary" fullWidth onClick={submit}>Save survey</Button>
+        <Button theme={theme} variant="primary" fullWidth onClick={submit}>{editing ? 'Save changes' : 'Save survey'}</Button>
       </StickyBar>
     </FormShell>
   );
