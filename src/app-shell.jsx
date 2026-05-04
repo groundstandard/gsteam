@@ -159,7 +159,18 @@ function App() {
         open_questions: 'openQuestions',
         edit_requests: 'editRequests',
         reviews: 'reviews',
+        // config: handled specially below (single-row table, store the
+        // values jsonb directly on state.config rather than a list).
       };
+      // config is a single-row table (id=1) — its `values` JSONB drives every
+      // scoring threshold. Push UPDATEs straight onto state.config so admin
+      // edits propagate live across sessions without a reload.
+      if (table === 'config') {
+        if (eventType === 'UPDATE' || eventType === 'INSERT') {
+          if (row && row.values) setState(s => ({ ...s, config: row.values }));
+        }
+        return;
+      }
       const key = collectionByTable[table];
       if (!key) return;
       setState(s => {
@@ -185,7 +196,7 @@ function App() {
       'monthly_metrics', 'growth_events', 'surveys',
       'adjustments', 'weekly_checkins', 'monthly_checkins', 'pending_clients',
       'cancel_reasons', 'quarter_inputs', 'open_questions',
-      'edit_requests', 'reviews',
+      'edit_requests', 'reviews', 'config',
     ], apply).then(fn => { if (cancelled) fn?.(); else unsub = fn; });
     return () => { cancelled = true; if (unsub) unsub(); };
   }, [t.apiMode, authedSession]);
