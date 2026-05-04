@@ -1631,7 +1631,7 @@ function AdminMore({ theme, navigate, profile, onSignOut }) {
     { name: 'bulk-cadence', icon: 'cal', label: 'Bulk cadence', desc: 'Set weekly/monthly for many clients at once' },
     { name: 'questions', icon: 'alert', label: 'Open Questions',  desc: 'Decisions pending leadership' },
     { name: 'audit-log', icon: 'shield', label: 'Audit Log',       desc: 'Read-only history of changes' },
-    { name: 'config',    icon: 'cog',   label: 'Config',          desc: 'Scoring thresholds & quarter window' },
+    { name: 'config',    icon: 'cog',   label: 'Config — adjust formulas', desc: 'Edit every scoring threshold (MRR target, lead cost bands, attrition floors, retention cliff, pot %)' },
     { name: 'roster',    icon: 'user',  label: 'Roster',          desc: 'CAs, Account Managers, Relationship Dev Reps' },
   ];
   return (
