@@ -414,7 +414,7 @@ async function loadStateSheet() {
 
 async function loadStateSupabase() {
   const sb = await CABT_sb();
-  const [profile, cas, sales, clients, mm, ge, sv, adj, cfg, pending, oq, wc, mc] = await Promise.all([
+  const [profile, cas, sales, clients, mm, ge, sv, adj, cfg, pending, oq, wc, mc, cr, qi] = await Promise.all([
     CABT_currentProfile(),
     sb.from('cas').select('*').order('id'),
     sb.from('sales_team').select('*').order('id'),
@@ -428,15 +428,34 @@ async function loadStateSupabase() {
     sb.from('open_questions').select('*'),
     sb.from('weekly_checkins').select('*'),
     sb.from('monthly_checkins').select('*'),
+    // New tables for bonus tracker alignment (graceful if missing)
+    sb.from('cancel_reasons').select('*').order('sort_order').then(r => r, () => ({ data: [] })),
+    sb.from('quarter_inputs').select('*').order('quarter_start', { ascending: false }).then(r => r, () => ({ data: [] })),
   ]);
+
+  const cancelReasons = toUI(cr.data || []);
+  // Index for fast lookup in calc.jsx
+  const cancelReasonsByCode = {};
+  cancelReasons.forEach(r => { cancelReasonsByCode[r.code] = r; });
+
+  // Pick the quarter_inputs row matching the current quarterStart from
+  // config; fall back to most recent. If no rows yet, undefined → calc.jsx
+  // uses config-based fallback.
+  const allQI = toUI(qi.data || []);
+  const cfgValues = cfg.data?.values || {};
+  const cfgQStart = cfgValues.quarterStart || cfgValues.quarter_start;
+  const quarterInputs = allQI.find(q => q.quarterStart === cfgQStart) || allQI[0] || null;
+
   return {
     _live: true, me: profile, role: profile?.role,
     cas: toUI(cas.data || []), sales: toUI(sales.data || []),
     clients: toUI(clients.data || []), monthlyMetrics: toUI(mm.data || []),
     growthEvents: toUI(ge.data || []), surveys: toUI(sv.data || []),
-    adjustments: toUI(adj.data || []), config: cfg.data?.values || {},
+    adjustments: toUI(adj.data || []), config: cfgValues,
     pendingClients: toUI(pending.data || []), openQuestions: toUI(oq.data || []),
     weeklyCheckins: toUI(wc.data || []), monthlyCheckins: toUI(mc.data || []),
+    cancelReasons, cancelReasonsByCode,
+    quarterInputs, allQuarterInputs: allQI,
   };
 }
 
