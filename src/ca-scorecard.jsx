@@ -40,7 +40,7 @@ function CAScorecard({ state, ca, theme, viz = 'rings' }) {
           <div style={{ width: `${score.bookCompleteness*100}%`, height: '100%', background: score.bookCompleteness < 0.8 ? STATUS.yellow : STATUS.green }}/>
         </div>
         <div style={{ fontSize: 12, color: theme.inkMuted, lineHeight: 1.4 }}>
-          If this is below 100%, your <strong style={{ color: theme.ink }}>Performance bonus is reduced proportionally.</strong>
+          Months of data logged ÷ months expected this quarter. If below 100%, your <strong style={{ color: theme.ink }}>Performance bucket is reduced proportionally</strong> — already factored into the Composite above. (This is <em>not</em> the same as Composite — Composite is the overall scorecard, Book completeness is just the data-coverage gate.)
         </div>
       </Card>
 

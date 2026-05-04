@@ -174,14 +174,20 @@ function CAHome({ state, ca, theme, density, navigate }) {
         </div>
       </div>
 
-      {/* Book health chips */}
+      {/* Book health chips — 4 buckets so the counts add up to the full
+          client total. Bobby 2026-05-04: "On track / Watch / At risk only
+          have 1, 1, 5 but there are about 50 active accounts." Clients
+          with no scoreable data this quarter were silently dropping into
+          the gray bucket and disappearing from the chip row. Now they
+          surface as "No data — needs logging" so the math is transparent. */}
       <div>
         <SectionLabel theme={theme}>Book health · {myClients.length} clients</SectionLabel>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
           {[
             { key: 'green',  count: buckets.green,  label: 'On track' },
             { key: 'yellow', count: buckets.yellow, label: 'Watch' },
             { key: 'red',    count: buckets.red,    label: 'At risk' },
+            { key: 'gray',   count: buckets.gray,   label: 'No data' },
           ].map(b => (
             <button
               key={b.key}
@@ -398,7 +404,7 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
   });
 
   let filtered = enriched;
-  if (filter === 'green' || filter === 'yellow' || filter === 'red') {
+  if (filter === 'green' || filter === 'yellow' || filter === 'red' || filter === 'gray') {
     filtered = enriched.filter(e => e.status === filter);
   } else if (filter === 'needs-data') {
     filtered = enriched.filter(e => e.needsData);
@@ -528,8 +534,11 @@ function CAProfile({ state, ca, theme, navigate, profile, onSignOut }) {
   const role = (profile && profile.role) || 'ca';
   const initials = (displayName || 'YOU').split(/\s+/).map(s => s[0]).slice(0, 2).join('').toUpperCase();
 
-  // Book stats (only meaningful for CAs with assigned clients)
-  const myClients = ca ? (state.clients || []).filter(c => c.assignedCA === ca.id && !c.cancel_date) : [];
+  // Book stats (only meaningful for CAs with assigned clients).
+  // Bobby 2026-05-04: was using snake_case `cancel_date` here while the API
+  // serves camelCase `cancelDate`, so the !cancelled filter was a no-op and
+  // the count included cancelled clients. Use cancelDate.
+  const myClients = ca ? (state.clients || []).filter(c => c.assignedCA === ca.id && !c.cancelDate) : [];
   const totalRetainer = myClients.reduce((s, c) => s + (c.monthlyRetainer || c.monthly_retainer || 0), 0);
   const recentSurveys = ca ? (state.surveys || []).filter(s => s.caId === ca.id || s.ca_id === ca.id).length : 0;
 
