@@ -142,8 +142,32 @@ function ComposeViz({ score, theme }) {
   );
 }
 
+// What each sub-score actually measures + the typical reason it's red.
+// Keyed by the sub-score key in the BucketBreakdown groups below.
+const RED_REASONS = {
+  revenue:      { what: 'Avg client MRR vs contracted retainer.',
+                  why:  'Average MRR across recent months is below the retainer those clients signed. Confirm billing is correct and check for clients consistently underpaying.' },
+  adEfficiency: { what: 'Ad spend vs target (10% of gross revenue).',
+                  why:  'Ad spend is far from the 10% target band. Pull back if over-spending, ramp up if under-target.' },
+  funnel:       { what: 'Booking, show, and close rates vs floors (30% / 50% / 70%).',
+                  why:  'One or more funnel rates are below floor. Tap each client and find the worst stage — usually show rate or close rate.' },
+  attrition:    { what: 'Monthly student cancel rate.',
+                  why:  'Cancellation rate is above the 3% green floor. Survey churning students for the reason and tighten retention follow-ups.' },
+  satisfaction: { what: 'Recent survey responses (6 month lookback).',
+                  why:  'Either no surveys logged in 6 months OR average rating is low. Schedule client check-ins and capture surveys.' },
+  growth:       { what: 'Client MRR trajectory + add-ons / gear / referrals.',
+                  why:  'Clients aren\'t growing. Look for upsell, membership add-on, or gear opportunities; capture referrals as Growth Events.' },
+  mrrGrowth:    { what: 'Quarter-over-quarter MRR growth per client (target $750/mo).',
+                  why:  'Clients are flat or shrinking. Push for upsells, gear, or membership add-ons.' },
+  leadCost:     { what: 'Cost per lead, last month (best ≤$5, OK ≤$20).',
+                  why:  'Cost per lead is above $20. Check ad targeting, creative fatigue, or audience saturation.' },
+  adSpend:      { what: 'Ad spend vs target (max of $1000 floor, 10% of MRR).',
+                  why:  'Ad spend is below target. Schedule a spend ramp with the client.' },
+};
+
 function BucketBreakdown({ score, state, theme }) {
   const [expanded, setExpanded] = React.useState({ performance: true, retention: false, growth: false });
+  const [whyOpen, setWhyOpen] = React.useState({}); // keyed by sub-score key
   // Aggregate sub-scores across CA's clients
   const subs = score.clients.map(c => c.sub).filter(s => s.composite != null);
   const avg = (key) => subs.length ? subs.reduce((s, sb) => s + (sb[key] || 0), 0) / subs.length : 0;
@@ -192,13 +216,40 @@ function BucketBreakdown({ score, state, theme }) {
                       <div style={{ height: 4, background: theme.rule, borderRadius: 2, overflow: 'hidden' }}>
                         <div style={{ width: `${val*100}%`, height: '100%', background: STATUS[ss] }}/>
                       </div>
-                      {ss === 'red' && (
-                        <button style={{
-                          marginTop: 6, background: 'transparent', border: 'none', cursor: 'pointer',
-                          color: STATUS.red, fontSize: 11, fontWeight: 600, padding: 0,
-                          textDecoration: 'underline', fontFamily: 'inherit',
-                        }}>Why is this red?</button>
-                      )}
+                      {ss === 'red' && (() => {
+                        const isWhyOpen = !!whyOpen[k];
+                        const info = RED_REASONS[k];
+                        return (
+                          <>
+                            <button
+                              onClick={() => setWhyOpen(o => ({ ...o, [k]: !o[k] }))}
+                              style={{
+                                marginTop: 6, background: 'transparent', border: 'none', cursor: 'pointer',
+                                color: STATUS.red, fontSize: 11, fontWeight: 600, padding: 0,
+                                textDecoration: 'underline', fontFamily: 'inherit',
+                              }}>
+                              {isWhyOpen ? 'Hide explanation' : 'Why is this red?'}
+                            </button>
+                            {isWhyOpen && info && (
+                              <div style={{
+                                marginTop: 8, padding: '10px 12px',
+                                background: STATUS.red + '14',
+                                border: `1px solid ${STATUS.red}33`,
+                                borderRadius: 8, fontSize: 12, color: theme.ink, lineHeight: 1.5,
+                              }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: STATUS.red, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>
+                                  What this measures
+                                </div>
+                                <div style={{ marginBottom: 6 }}>{info.what}</div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: STATUS.red, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>
+                                  Why it's red
+                                </div>
+                                <div>{info.why}</div>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   );
                 })}
