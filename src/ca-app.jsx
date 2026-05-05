@@ -167,26 +167,54 @@ function CAHome({ state, ca, theme, density, navigate }) {
             return <>Projected payout: <em style={{ color: theme.gold, fontStyle: 'normal', fontWeight: 600 }}>$0</em> this quarter.</>;
           })()}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, position: 'relative', zIndex: 1 }}>
-          <ScoreRing
-            value={score.composite}
-            size={84} stroke={6}
-            color={bonusColor}
-            bg="rgba(255,255,255,0.12)"
-            label={
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1, color: theme.accentInk, fontVariantNumeric: 'tabular-nums' }}>
-                  {(score.composite * 100).toFixed(0)}
+        {/* Score cards row — Bobby 2026-05-06 wanted the 4 scores treated as
+            proper cards with nicer formatting (was a small inline Composite
+            ring + 3 plain text rows). Composite leads, then the three
+            buckets that compose it. */}
+        <div style={{
+          position: 'relative', zIndex: 1,
+          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8,
+        }}>
+          {[
+            { key: 'composite',   label: 'Composite',   value: score.composite,   primary: true },
+            { key: 'performance', label: 'Performance', value: score.performance },
+            { key: 'retention',   label: 'Retention',   value: score.retention   },
+            { key: 'growth',      label: 'Growth',      value: score.growth      },
+          ].map((s) => {
+            const v = s.value;
+            const display = (v != null && Number.isFinite(v)) ? (v * 100).toFixed(0) : '—';
+            const status = CABT_scoreToStatus(v);
+            const dotColor = status === 'gray' ? 'rgba(0,0,0,0.25)' : STATUS[status];
+            return (
+              <div key={s.key} style={{
+                background: s.primary ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.55)',
+                border: '1px solid rgba(0,0,0,0.08)',
+                borderRadius: theme.radius - 2,
+                padding: '12px 12px 10px',
+                display: 'flex', flexDirection: 'column', gap: 6,
+                color: theme.accentInk,
+                boxShadow: s.primary ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 4, background: dotColor }}/>
+                  <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.75 }}>
+                    {s.label}
+                  </span>
                 </div>
-                <div style={{ fontSize: 10, opacity: 0.65, letterSpacing: 0.6, marginTop: 2 }}>COMPOSITE</div>
+                <div style={{
+                  fontFamily: theme.serif, fontSize: 30, fontWeight: 600, lineHeight: 1,
+                  letterSpacing: -0.5, fontVariantNumeric: 'tabular-nums',
+                }}>{display}<span style={{ fontSize: 12, opacity: 0.55, marginLeft: 3, letterSpacing: 0.3 }}>/100</span></div>
+                {/* Mini progress bar — visual at-a-glance */}
+                <div style={{ height: 4, background: 'rgba(0,0,0,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${Math.max(0, Math.min(100, (v != null ? v * 100 : 0)))}%`,
+                    height: '100%', background: dotColor, transition: 'width 0.3s',
+                  }}/>
+                </div>
               </div>
-            }
-          />
-          <div style={{ flex: 1, fontSize: 13, opacity: 0.85, lineHeight: 1.5 }}>
-            <div>Performance <span style={{ float: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{(score.performance*100).toFixed(0)}</span></div>
-            <div>Retention <span style={{ float: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{(score.retention*100).toFixed(0)}</span></div>
-            <div>Growth <span style={{ float: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{(score.growth*100).toFixed(0)}</span></div>
-          </div>
+            );
+          })}
         </div>
       </div>
 
