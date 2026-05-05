@@ -446,6 +446,30 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
         padding: '8px 16px 12px',
         borderBottom: `1px solid ${theme.rule}`,
       }}>
+        {/* Bobby 2026-05-05: Dashboard accessible from the Accounts section. */}
+        <button
+          onClick={() => navigate('dashboard')}
+          className="cabt-btn-press"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+            padding: '10px 14px', marginBottom: 10,
+            background: theme.surface, border: `1px solid ${theme.rule}`,
+            borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
+            color: theme.ink, textAlign: 'left',
+          }}
+        >
+          <div style={{
+            width: 32, height: 32, borderRadius: 8,
+            background: theme.accent + '15', color: theme.accent,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}><Icon name="chart" size={16} /></div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: theme.ink }}>Dashboard view</div>
+            <div style={{ fontSize: 11, color: theme.inkMuted }}>Compare every client side-by-side · sortable table</div>
+          </div>
+          <Icon name="chev-r" size={16} color={theme.inkMuted} />
+        </button>
+
         <div style={{
           display: 'flex', gap: 8, overflowX: 'auto', WebkitOverflowScrolling: 'touch',
           scrollbarWidth: 'none', margin: '0 -16px', padding: '0 16px',

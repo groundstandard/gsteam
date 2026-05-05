@@ -2113,7 +2113,10 @@ function AdminFormulaInspector({ state, theme, navigate }) {
 // referenced. Quarter window comes from config (falls back to current calendar
 // quarter). Reads effective monthly metrics so weekly entries roll up.
 // ─────────────────────────────────────────────────────────────────────────
-function AdminDashboard({ state, theme, navigate }) {
+function AdminDashboard({ state, theme, navigate, scopeCa }) {
+  // scopeCa (optional) — when set, restricts the dashboard to clients
+  // assigned to that CA. Used by the CA Accounts view (Bobby 2026-05-05:
+  // "Lets make this Dashboard accessible on the The Accounts seciton too").
   const cfg = state.config || {};
   const today = new Date();
   const dq = (() => {
@@ -2138,6 +2141,7 @@ function AdminDashboard({ state, theme, navigate }) {
   React.useEffect(() => { setPageIndex(0); }, [search, includeCancelled, pageSize]);
 
   const allClients = (state.clients || [])
+    .filter(c => scopeCa ? c.assignedCA === scopeCa : true)
     .filter(c => includeCancelled ? true : !c.cancelDate)
     .filter(c => !search ||
       (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
@@ -2348,6 +2352,7 @@ function AdminDashboard({ state, theme, navigate }) {
         <table style={{ width: '100%', minWidth: 1400, borderCollapse: 'collapse' }}>
           <thead>
             <tr>
+              <Th k="id">Code</Th>
               <Th k="name">Client</Th>
               <Th k="caName">CA</Th>
               <Th k="tier">Tier</Th>
@@ -2366,15 +2371,15 @@ function AdminDashboard({ state, theme, navigate }) {
           </thead>
           <tbody>
             {totalRows === 0 && (
-              <tr><td colSpan={14} style={{ padding: 24, textAlign: 'center', color: theme.inkMuted, fontSize: 13 }}>No clients match this filter.</td></tr>
+              <tr><td colSpan={15} style={{ padding: 24, textAlign: 'center', color: theme.inkMuted, fontSize: 13 }}>No clients match this filter.</td></tr>
             )}
             {paged.map(r => (
               <tr key={r.id}
                   onClick={() => navigate('client-calc', { clientId: r.id })}
                   style={{ cursor: 'pointer' }}>
+                <Td mono color={theme.inkMuted}>{r.id}</Td>
                 <Td bold>
                   <span style={{ marginRight: 6 }}>{r.name}</span>
-                  <span style={{ fontFamily: theme.mono || 'monospace', fontSize: 10, color: theme.inkMuted }}>{r.id}</span>
                   {r.cancelled && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: STATUS.red, letterSpacing: 0.4, textTransform: 'uppercase' }}>cancelled</span>}
                 </Td>
                 <Td color={theme.inkSoft}>{r.caName}</Td>

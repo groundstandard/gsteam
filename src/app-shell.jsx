@@ -428,6 +428,7 @@ function App() {
       return ({
         'home': 'Today',
         'book': 'Accounts',
+        'dashboard': 'Dashboard',
         'profile': 'Me',
         'client-detail': 'Client',
         'log-metrics': 'Log Metrics',
@@ -470,6 +471,7 @@ function App() {
       switch (route.name) {
         case 'home': return <CAHome state={state} ca={ca} theme={theme} navigate={navigate} />;
         case 'book': return <CABook state={state} ca={ca} theme={theme} navigate={navigate} initialFilter={route.params.filter}/>;
+        case 'dashboard': return <AdminDashboard state={state} theme={theme} navigate={navigate} scopeCa={ca?.id}/>;
         case 'client-detail': return <ClientDetail state={state} ca={ca} theme={theme} clientId={route.params.clientId} navigate={navigate}/>;
         case 'log-metrics': return <LogMetricsForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitMetrics}/>;
         case 'log-event': return <LogEventForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitEvent}/>;
