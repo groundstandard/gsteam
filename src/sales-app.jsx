@@ -80,7 +80,7 @@ function CABT_salesRollupB(rep, state) {
   };
 }
 
-function SalesHome({ state, rep, theme, navigate }) {
+function SalesHome({ state, rep, theme, navigate, profile, onSignOut }) {
   if (!rep) return null;
   const r = CABT_salesRollupB(rep, state);
   if (!r) return null;
@@ -108,6 +108,42 @@ function SalesHome({ state, rep, theme, navigate }) {
       </div>
       <Button theme={theme} icon="plus" fullWidth onClick={() => navigate('log-contract')}>Log new contract</Button>
       <Button theme={theme} icon="edit" variant="secondary" fullWidth onClick={() => navigate('log-adjustment')}>Log adjustment</Button>
+
+      {/* Profile + Sign out — Bobby 2026-05-06: Sales had no sign out option. */}
+      {(profile || rep) && (
+        <Card theme={theme} padding={16}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 44, height: 44, borderRadius: 22,
+              background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent}CC)`,
+              color: theme.accentInk,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: theme.serif, fontWeight: 600, fontSize: 18, letterSpacing: -0.3, flexShrink: 0,
+            }}>{((profile && (profile.display_name || profile.displayName)) || rep.name || 'S').split(/\s+/).map(s => s[0]).slice(0, 2).join('').toUpperCase()}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: theme.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {(profile && (profile.display_name || profile.displayName)) || rep.name}
+              </div>
+              <div style={{ fontSize: 12, color: theme.inkMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {(profile && profile.email) || rep.email}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+      {onSignOut && (
+        <button
+          onClick={onSignOut}
+          className="cabt-btn-press"
+          style={{
+            width: '100%', padding: '14px 16px',
+            background: 'transparent', border: `1.5px solid ${theme.rule}`,
+            borderRadius: 14, color: theme.ink,
+            fontSize: 15, fontWeight: 600, fontFamily: 'inherit',
+            cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+          }}
+        >Sign out</button>
+      )}
     </div>
   );
 }

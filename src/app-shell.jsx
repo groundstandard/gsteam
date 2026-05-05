@@ -37,6 +37,24 @@ function App() {
   const [confirmState, setConfirmState] = React.useState(null);
   const askConfirm = (opts) => setConfirmState(opts);
   const closeConfirm = () => setConfirmState(null);
+
+  // Shared sign-out handler — Bobby 2026-05-06: "wala mga sign out yung admin
+  // lang meron." CA had it gated on apiMode === 'supabase' (subtle bug — CA
+  // sometimes didn't see the button); Sales had no sign out at all. Now all
+  // three roles use the same handler. Renders the button whenever there's
+  // an authed session; the actual remote sign-out runs through CABT_signOut.
+  const signOutHandler = (authedSession || authedProfile) ? () => askConfirm({
+    title: 'Sign out of gsTeam?',
+    message: "You'll need to sign in again next time.",
+    confirmLabel: 'Sign out',
+    danger: true,
+    onConfirm: async () => {
+      try { await CABT_signOut(); } catch (_e) {}
+      setAuthedSession(null);
+      setAuthedProfile(null);
+      closeConfirm();
+    },
+  }) : null;
   const [installable, setInstallable] = React.useState(!!window.CABT_INSTALL_PROMPT);
   const [installed, setInstalled] = React.useState(false);
 
@@ -478,20 +496,14 @@ function App() {
         case 'log-survey': return <LogSurveyForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitSurvey}/>;
         case 'log-checkin': return <LogCheckinForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} navigate={navigate} onSubmit={submitCheckin}/>;
         case 'scorecard': return <CAScorecard state={state} ca={ca} theme={theme} viz={t.scorecardViz}/>;
-        case 'profile': return <CAProfile state={state} ca={ca} theme={theme} navigate={navigate} profile={authedProfile} onSignOut={t.apiMode === 'supabase' && authedProfile ? () => askConfirm({
-          title: 'Sign out of gsTeam?',
-          message: "You'll need to sign in again next time.",
-          confirmLabel: 'Sign out',
-          danger: true,
-          onConfirm: async () => { try { await CABT_signOut(); } catch (_e) {} setAuthedSession(null); setAuthedProfile(null); closeConfirm(); },
-        }) : null}/>;
+        case 'profile': return <CAProfile state={state} ca={ca} theme={theme} navigate={navigate} profile={authedProfile} onSignOut={signOutHandler}/>;
         default: return null;
       }
     }
     if (role === 'Sales') {
       const rep = activeRep || state.sales[0];
       switch (route.name) {
-        case 'home': return <SalesHome state={state} rep={rep} theme={theme} navigate={navigate}/>;
+        case 'home': return <SalesHome state={state} rep={rep} theme={theme} navigate={navigate} profile={authedProfile} onSignOut={signOutHandler}/>;
         case 'commissions': return <SalesCommissions state={state} rep={rep} theme={theme}/>;
         case 'log-contract': return <LogContractForm state={state} rep={rep} theme={theme} navigate={navigate} onSubmit={submitContract}/>;
         case 'log-adjustment': return <LogAdjustmentForm state={state} rep={rep} theme={theme} isAdmin={false} navigate={navigate} onSubmit={submitAdjustment}/>;
@@ -519,13 +531,7 @@ function App() {
       case 'bulk-cadence': return <AdminBulkCadence state={state} theme={theme} navigate={navigate}/>;
       case 'config':      return <AdminConfig state={state} theme={theme} onUpdate={updateConfig}/>;
       case 'roster':      return <AdminRoster state={state} theme={theme} onReload={reloadLive} onToast={showToast}/>;
-      case 'more':        return <AdminMore theme={theme} navigate={navigate} profile={authedProfile} onSignOut={t.apiMode === 'supabase' && authedSession ? () => askConfirm({
-        title: 'Sign out of gsTeam?',
-        message: "You'll need to sign in again next time.",
-        confirmLabel: 'Sign out',
-        danger: true,
-        onConfirm: async () => { try { await CABT_signOut(); } catch (_e) {} setAuthedSession(null); setAuthedProfile(null); closeConfirm(); },
-      }) : null}/>;
+      case 'more':        return <AdminMore theme={theme} navigate={navigate} profile={authedProfile} onSignOut={signOutHandler}/>;
       default: return null;
     }
   };
