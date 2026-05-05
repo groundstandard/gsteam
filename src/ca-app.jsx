@@ -168,14 +168,17 @@ function CAHome({ state, ca, theme, density, navigate }) {
           })()}
         </div>
 
-        {/* Score cards row — Bobby 2026-05-06: circular rings (not bars).
-            Composite leads, then the three buckets that compose it. */}
+        {/* Score cards — circular rings, uniform across all four. Bobby
+            2026-05-06: "look professional... naka align siya." All cards
+            share the same surface treatment + sizing so it reads as one
+            row instead of one emphasized + three faded. */}
         <div style={{
           position: 'relative', zIndex: 1,
-          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8,
+          display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+          gap: 10, maxWidth: 640,
         }}>
           {[
-            { key: 'composite',   label: 'Composite',   value: score.composite,   primary: true },
+            { key: 'composite',   label: 'Composite',   value: score.composite   },
             { key: 'performance', label: 'Performance', value: score.performance },
             { key: 'retention',   label: 'Retention',   value: score.retention   },
             { key: 'growth',      label: 'Growth',      value: score.growth      },
@@ -183,34 +186,35 @@ function CAHome({ state, ca, theme, density, navigate }) {
             const v = s.value;
             const display = (v != null && Number.isFinite(v)) ? (v * 100).toFixed(0) : '—';
             const statusKey = CABT_scoreToStatus(v);
-            const ringColor = statusKey === 'gray' ? 'rgba(0,0,0,0.20)' : STATUS[statusKey];
+            const ringColor = statusKey === 'gray' ? 'rgba(0,0,0,0.18)' : STATUS[statusKey];
             return (
               <div key={s.key} style={{
-                background: s.primary ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.55)',
-                border: '1px solid rgba(0,0,0,0.08)',
-                borderRadius: theme.radius - 2,
-                padding: '12px 8px 10px',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                background: '#FAFAF7',
+                border: '1px solid rgba(0,0,0,0.10)',
+                borderRadius: 14,
+                padding: '14px 8px',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                 color: theme.accentInk,
-                boxShadow: s.primary ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                minHeight: 120,
               }}>
                 <ScoreRing
                   value={v}
-                  size={72}
+                  size={84}
                   stroke={5}
                   color={ringColor}
                   bg="rgba(0,0,0,0.08)"
                   label={
                     <div style={{ textAlign: 'center', lineHeight: 1 }}>
                       <div style={{
-                        fontFamily: theme.serif, fontSize: 22, fontWeight: 700,
+                        fontFamily: theme.serif, fontSize: 24, fontWeight: 700,
                         color: theme.accentInk, fontVariantNumeric: 'tabular-nums',
                         letterSpacing: -0.5,
                       }}>{display}</div>
                       <div style={{
-                        fontSize: 8, fontWeight: 800, letterSpacing: 0.6,
-                        marginTop: 3, textTransform: 'uppercase',
-                        color: theme.accentInk, opacity: 0.65,
+                        fontSize: 9, fontWeight: 800, letterSpacing: 0.6,
+                        marginTop: 4, textTransform: 'uppercase',
+                        color: theme.accentInk, opacity: 0.7,
                       }}>{s.label}</div>
                     </div>
                   }
