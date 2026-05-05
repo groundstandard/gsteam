@@ -140,38 +140,26 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
       {tab === 'history' && (() => {
         // Aggregate every log type for this client into one stream, then group
         // by month or week. Each item carries kind + date + display payload.
-        const items = [
-          // Monthly metrics — numeric, period = first-of-month
-          ...cMonthlyMetrics.map(m => ({
-            id: m.id, kind: 'monthly-metrics', date: m.month, sortDate: m.month,
-            payload: m,
-          })),
-          // Weekly metrics (Phase 11) — numeric, period = week start
-          ...cWeeklyMetrics.map(w => ({
-            id: w.id, kind: 'weekly-metrics', date: w.weekStart, sortDate: w.weekStart,
-            payload: w,
-          })),
-          // Growth events
-          ...cEvents.map(e => ({
-            id: e.id, kind: 'event', date: e.date, sortDate: e.date,
-            payload: e,
-          })),
-          // Surveys
-          ...cSurveys.map(s => ({
-            id: s.id, kind: 'survey', date: s.date, sortDate: s.date,
-            payload: s,
-          })),
-          // Narrative check-ins (weekly)
-          ...cWeekly.map(w => ({
-            id: w.id, kind: 'weekly-checkin', date: w.weekStart, sortDate: w.weekStart,
-            payload: w,
-          })),
-          // Narrative check-ins (monthly)
-          ...cMonthly.map(m => ({
-            id: m.id, kind: 'monthly-checkin', date: m.month, sortDate: m.month,
-            payload: m,
-          })),
+        // Bobby 2026-05-05 ("yung week data at month maiiba ah"): month view
+        // hides weekly entries; week view hides monthly entries — so the
+        // numbers you see in each view actually correspond to that period.
+        const allItems = [
+          ...cMonthlyMetrics.map(m => ({ id: m.id, kind: 'monthly-metrics', date: m.month,     sortDate: m.month,     payload: m })),
+          ...cWeeklyMetrics .map(w => ({ id: w.id, kind: 'weekly-metrics',  date: w.weekStart, sortDate: w.weekStart, payload: w })),
+          ...cEvents        .map(e => ({ id: e.id, kind: 'event',           date: e.date,      sortDate: e.date,      payload: e })),
+          ...cSurveys       .map(s => ({ id: s.id, kind: 'survey',          date: s.date,      sortDate: s.date,      payload: s })),
+          ...cWeekly        .map(w => ({ id: w.id, kind: 'weekly-checkin',  date: w.weekStart, sortDate: w.weekStart, payload: w })),
+          ...cMonthly       .map(m => ({ id: m.id, kind: 'monthly-checkin', date: m.month,     sortDate: m.month,     payload: m })),
         ];
+        // Period-bound items only show in their matching grouping mode.
+        // Events + surveys are date-based (not period-bound) so they appear
+        // in both views, bucketed by whichever grouping is active.
+        const items = allItems.filter(it => {
+          if (historyGroup === 'week') {
+            return it.kind !== 'monthly-metrics' && it.kind !== 'monthly-checkin';
+          }
+          return it.kind !== 'weekly-metrics' && it.kind !== 'weekly-checkin';
+        });
 
         // Group key — first-of-month or ISO Monday of week
         const isoMondayOf = (iso) => {
