@@ -541,28 +541,32 @@ function App() {
   // Tabs use the gsTeam custom nav-* icon set (defined in ui.jsx). They
   // share a consistent style — line stroke, optional accent dot — so the
   // bar reads as a single family.
+  // Tab order — Bobby 2026-05-06:
+  //   CA:    Today, Log, Dashboard, Accounts, Score, Me
+  //   Sales: Home, Contract, Commissions, Adjust
+  //   Admin: Dashboard, Clients, Revenue, Bonuses, Approvals, More
   const tabs = role === 'CA'
     ? [
-        { name: 'home', icon: 'nav-today', label: 'Today' },
-        { name: 'dashboard', icon: 'chart', label: 'Dashboard' },
-        { name: 'book', icon: 'nav-accounts', label: 'Accounts' },
-        { name: 'log-picker', icon: 'nav-log', label: 'Log', primary: true },
-        { name: 'scorecard', icon: 'nav-score', label: 'Score' },
-        { name: 'profile', icon: 'nav-me', label: 'Me' },
+        { name: 'home',       icon: 'nav-today',    label: 'Today' },
+        { name: 'log-picker', icon: 'nav-log',      label: 'Log', primary: true },
+        { name: 'dashboard',  icon: 'chart',        label: 'Dashboard' },
+        { name: 'book',       icon: 'nav-accounts', label: 'Accounts' },
+        { name: 'scorecard',  icon: 'nav-score',    label: 'Score' },
+        { name: 'profile',    icon: 'nav-me',       label: 'Me' },
       ]
     : role === 'Sales'
     ? [
-        { name: 'home', icon: 'nav-today', label: 'Home' },
-        { name: 'commissions', icon: 'cash', label: 'Commissions' },
-        { name: 'log-contract', icon: 'nav-log', label: 'Contract', primary: true },
-        { name: 'log-adjustment', icon: 'edit', label: 'Adjust' },
+        { name: 'home',           icon: 'nav-today', label: 'Home' },
+        { name: 'log-contract',   icon: 'nav-log',   label: 'Contract', primary: true },
+        { name: 'commissions',    icon: 'cash',      label: 'Commissions' },
+        { name: 'log-adjustment', icon: 'edit',      label: 'Adjust' },
       ]
     : [
         { name: 'home',      icon: 'chart',        label: 'Dashboard' },
-        { name: 'approvals', icon: 'shield',       label: 'Approvals' },
-        { name: 'bonus',     icon: 'cash',         label: 'Bonus' },
-        { name: 'revenue',   icon: 'nav-score',    label: 'Revenue' },
         { name: 'clients',   icon: 'nav-accounts', label: 'Clients' },
+        { name: 'revenue',   icon: 'nav-score',    label: 'Revenue' },
+        { name: 'bonus',     icon: 'cash',         label: 'Bonuses' },
+        { name: 'approvals', icon: 'shield',       label: 'Approvals' },
         { name: 'more',      icon: 'cog',          label: 'More' },
       ];
 
