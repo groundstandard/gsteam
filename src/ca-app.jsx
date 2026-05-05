@@ -167,10 +167,9 @@ function CAHome({ state, ca, theme, density, navigate }) {
             return <>Projected payout: <em style={{ color: theme.gold, fontStyle: 'normal', fontWeight: 600 }}>$0</em> this quarter.</>;
           })()}
         </div>
-        {/* Score cards row — Bobby 2026-05-06 wanted the 4 scores treated as
-            proper cards with nicer formatting (was a small inline Composite
-            ring + 3 plain text rows). Composite leads, then the three
-            buckets that compose it. */}
+
+        {/* Score cards row — Bobby 2026-05-06: circular rings (not bars).
+            Composite leads, then the three buckets that compose it. */}
         <div style={{
           position: 'relative', zIndex: 1,
           display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8,
@@ -183,35 +182,39 @@ function CAHome({ state, ca, theme, density, navigate }) {
           ].map((s) => {
             const v = s.value;
             const display = (v != null && Number.isFinite(v)) ? (v * 100).toFixed(0) : '—';
-            const status = CABT_scoreToStatus(v);
-            const dotColor = status === 'gray' ? 'rgba(0,0,0,0.25)' : STATUS[status];
+            const statusKey = CABT_scoreToStatus(v);
+            const ringColor = statusKey === 'gray' ? 'rgba(0,0,0,0.20)' : STATUS[statusKey];
             return (
               <div key={s.key} style={{
                 background: s.primary ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.55)',
                 border: '1px solid rgba(0,0,0,0.08)',
                 borderRadius: theme.radius - 2,
-                padding: '12px 12px 10px',
-                display: 'flex', flexDirection: 'column', gap: 6,
+                padding: '12px 8px 10px',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
                 color: theme.accentInk,
                 boxShadow: s.primary ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 4, background: dotColor }}/>
-                  <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.75 }}>
-                    {s.label}
-                  </span>
-                </div>
-                <div style={{
-                  fontFamily: theme.serif, fontSize: 30, fontWeight: 600, lineHeight: 1,
-                  letterSpacing: -0.5, fontVariantNumeric: 'tabular-nums',
-                }}>{display}<span style={{ fontSize: 12, opacity: 0.55, marginLeft: 3, letterSpacing: 0.3 }}>/100</span></div>
-                {/* Mini progress bar — visual at-a-glance */}
-                <div style={{ height: 4, background: 'rgba(0,0,0,0.08)', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{
-                    width: `${Math.max(0, Math.min(100, (v != null ? v * 100 : 0)))}%`,
-                    height: '100%', background: dotColor, transition: 'width 0.3s',
-                  }}/>
-                </div>
+                <ScoreRing
+                  value={v}
+                  size={72}
+                  stroke={5}
+                  color={ringColor}
+                  bg="rgba(0,0,0,0.08)"
+                  label={
+                    <div style={{ textAlign: 'center', lineHeight: 1 }}>
+                      <div style={{
+                        fontFamily: theme.serif, fontSize: 22, fontWeight: 700,
+                        color: theme.accentInk, fontVariantNumeric: 'tabular-nums',
+                        letterSpacing: -0.5,
+                      }}>{display}</div>
+                      <div style={{
+                        fontSize: 8, fontWeight: 800, letterSpacing: 0.6,
+                        marginTop: 3, textTransform: 'uppercase',
+                        color: theme.accentInk, opacity: 0.65,
+                      }}>{s.label}</div>
+                    </div>
+                  }
+                />
               </div>
             );
           })}
