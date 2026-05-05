@@ -2,6 +2,9 @@
 
 function ClientDetail({ state, ca, theme, clientId, navigate }) {
   const [tab, setTab] = React.useState('overview');
+  // Bobby 2026-05-05: history view consolidates every log type for a client
+  // and groups them by month or week. Toggle persists per-session per-client.
+  const [historyGroup, setHistoryGroup] = React.useState('month'); // 'month' | 'week'
   const client = state.clients.find(c => c.id === clientId);
   if (!client) return <div style={{ padding: 24 }}>Client not found.</div>;
 
@@ -66,6 +69,7 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
       <Tabs
         tabs={[
           { value: 'overview', label: 'Overview' },
+          { value: 'history',  label: 'History' },
           { value: 'timeline', label: `Timeline · ${cTimeline.length}` },
           { value: 'metrics',  label: `Metrics · ${cMetrics.length}` },
           { value: 'events',   label: `Events · ${cEvents.length}` },
@@ -132,6 +136,189 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
           </Card>
         </div>
       )}
+
+      {tab === 'history' && (() => {
+        // Aggregate every log type for this client into one stream, then group
+        // by month or week. Each item carries kind + date + display payload.
+        const items = [
+          // Monthly metrics — numeric, period = first-of-month
+          ...cMonthlyMetrics.map(m => ({
+            id: m.id, kind: 'monthly-metrics', date: m.month, sortDate: m.month,
+            payload: m,
+          })),
+          // Weekly metrics (Phase 11) — numeric, period = week start
+          ...cWeeklyMetrics.map(w => ({
+            id: w.id, kind: 'weekly-metrics', date: w.weekStart, sortDate: w.weekStart,
+            payload: w,
+          })),
+          // Growth events
+          ...cEvents.map(e => ({
+            id: e.id, kind: 'event', date: e.date, sortDate: e.date,
+            payload: e,
+          })),
+          // Surveys
+          ...cSurveys.map(s => ({
+            id: s.id, kind: 'survey', date: s.date, sortDate: s.date,
+            payload: s,
+          })),
+          // Narrative check-ins (weekly)
+          ...cWeekly.map(w => ({
+            id: w.id, kind: 'weekly-checkin', date: w.weekStart, sortDate: w.weekStart,
+            payload: w,
+          })),
+          // Narrative check-ins (monthly)
+          ...cMonthly.map(m => ({
+            id: m.id, kind: 'monthly-checkin', date: m.month, sortDate: m.month,
+            payload: m,
+          })),
+        ];
+
+        // Group key — first-of-month or ISO Monday of week
+        const isoMondayOf = (iso) => {
+          if (!iso) return '—';
+          const d = new Date(iso + 'T12:00:00');
+          const day = d.getDay() || 7;
+          if (day !== 1) d.setDate(d.getDate() - (day - 1));
+          return d.toISOString().slice(0, 10);
+        };
+        const groupKey = (it) =>
+          historyGroup === 'week' ? isoMondayOf(it.date) : (it.date ? it.date.slice(0, 7) + '-01' : '—');
+
+        const groupsMap = new Map();
+        items.forEach(it => {
+          const k = groupKey(it);
+          if (!groupsMap.has(k)) groupsMap.set(k, []);
+          groupsMap.get(k).push(it);
+        });
+        const groups = Array.from(groupsMap.entries())
+          .sort((a, b) => b[0].localeCompare(a[0]))
+          .map(([key, list]) => ({
+            key,
+            label: historyGroup === 'week'
+              ? `Week of ${CABT_fmtDate(key)}`
+              : CABT_fmtMonth(key),
+            items: [...list].sort((a, b) => (b.sortDate || '').localeCompare(a.sortDate || '')),
+          }));
+
+        const KIND_META = {
+          'monthly-metrics': { label: 'Monthly metrics', accent: '#43A047', route: 'log-metrics' },
+          'weekly-metrics':  { label: 'Weekly metrics',  accent: '#43A047', route: 'log-metrics' },
+          'event':           { label: 'Growth event',    accent: '#7C4DFF', route: 'log-event' },
+          'survey':          { label: 'Survey',          accent: '#FFB300', route: 'log-survey' },
+          'weekly-checkin':  { label: 'Weekly check-in', accent: '#039BE5', route: null },
+          'monthly-checkin': { label: 'Monthly check-in', accent: '#039BE5', route: null },
+        };
+
+        const renderItem = (it) => {
+          const meta = KIND_META[it.kind] || { label: it.kind, accent: theme.inkMuted };
+          const p = it.payload;
+          const isMetric = it.kind === 'monthly-metrics' || it.kind === 'weekly-metrics';
+          const isCheckin = it.kind === 'weekly-checkin' || it.kind === 'monthly-checkin';
+          const dateLabel = it.kind === 'weekly-metrics' || it.kind === 'weekly-checkin'
+            ? `Week of ${CABT_fmtDate(it.date)}`
+            : (it.kind === 'monthly-metrics' || it.kind === 'monthly-checkin'
+                ? CABT_fmtMonth(it.date)
+                : CABT_fmtDate(it.date));
+          const editable = !!meta.route;
+          return (
+            <div key={it.id} style={{
+              padding: '12px 14px', borderTop: `1px solid ${theme.rule}`,
+              cursor: editable ? 'pointer' : 'default',
+            }}
+              onClick={editable ? () => navigate(meta.route, { clientId, editingId: it.id }) : undefined}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 4, background: meta.accent, flexShrink: 0 }}/>
+                <span style={{ fontSize: 11, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.4, textTransform: 'uppercase' }}>{meta.label}</span>
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: theme.inkMuted, fontVariantNumeric: 'tabular-nums' }}>{dateLabel}</span>
+              </div>
+              {isMetric && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, fontSize: 11 }}>
+                  <Stat theme={theme} k="MRR"      v={CABT_fmtMoney(p.clientMRR)} />
+                  <Stat theme={theme} k="Ad spend" v={CABT_fmtMoney(p.adSpend)} />
+                  <Stat theme={theme} k="Leads"    v={p.leadsGenerated || 0} />
+                  <Stat theme={theme} k="Booked"   v={p.apptsBooked || 0} />
+                  <Stat theme={theme} k="Showed"   v={p.leadsShowed || 0} />
+                  <Stat theme={theme} k="Signed"   v={p.leadsSigned || 0} />
+                  <Stat theme={theme} k="Cancel"   v={p.studentsCancelled || 0} />
+                  <Stat theme={theme} k="Lead $"   v={CABT_fmtMoney(p.leadCost)} />
+                </div>
+              )}
+              {it.kind === 'event' && (
+                <div style={{ fontSize: 13, color: theme.ink }}>
+                  <strong>{p.eventType}</strong>
+                  {p.notes && <span style={{ color: theme.inkSoft }}> · {p.notes}</span>}
+                  {p.saleTotal > 0 && <span style={{ color: theme.inkMuted }}> · Sale {CABT_fmtMoney(p.saleTotal)}</span>}
+                </div>
+              )}
+              {it.kind === 'survey' && (() => {
+                const avg = (p.overall + p.responsiveness + p.followThrough + p.communication) / 4;
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 2 }}>
+                      {[1,2,3,4,5].map(n => (
+                        <Icon key={n} name={n <= Math.round(avg) ? 'star-fill' : 'star'} size={12} color={theme.gold || '#FFB300'} />
+                      ))}
+                    </div>
+                    {p.comment && <div style={{ flex: 1, fontFamily: theme.serif, fontSize: 13, fontStyle: 'italic', color: theme.inkSoft, lineHeight: 1.4 }}>"{p.comment}"</div>}
+                  </div>
+                );
+              })()}
+              {isCheckin && (
+                <div style={{ fontSize: 12, color: theme.ink, lineHeight: 1.5 }}>
+                  {[
+                    ['concern',       'Concern'],
+                    ['win',           'Win'],
+                    ['accountAction', 'Account-side'],
+                    ['agencyAction',  'Agency-side'],
+                  ].map(([k, label]) => p[k] ? (
+                    <div key={k} style={{ marginBottom: 4 }}>
+                      <span style={{ fontWeight: 700, color: theme.inkMuted, fontSize: 10, letterSpacing: 0.5, textTransform: 'uppercase', marginRight: 6 }}>{label}</span>
+                      <span style={{ whiteSpace: 'pre-wrap' }}>{p[k]}</span>
+                    </div>
+                  ) : null)}
+                  {!p.concern && !p.win && !p.accountAction && !p.agencyAction && p.notes && (
+                    <div style={{ color: theme.inkMuted, fontStyle: 'italic' }}>{p.notes}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        };
+
+        return (
+          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Group toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: theme.inkMuted, fontWeight: 600 }}>Group by</span>
+              {[
+                { v: 'month', label: 'Month' },
+                { v: 'week',  label: 'Week' },
+              ].map(g => (
+                <button key={g.v} onClick={() => setHistoryGroup(g.v)} style={{
+                  padding: '6px 12px', fontSize: 12, fontWeight: 700,
+                  background: historyGroup === g.v ? theme.ink : theme.surface,
+                  color: historyGroup === g.v ? (theme.accentInk || '#fff') : theme.ink,
+                  border: `1px solid ${historyGroup === g.v ? theme.ink : theme.rule}`,
+                  borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+                }}>{g.label}</button>
+              ))}
+              <span style={{ marginLeft: 'auto', fontSize: 11, color: theme.inkMuted }}>{items.length} log{items.length === 1 ? '' : 's'} across {groups.length} {historyGroup}{groups.length === 1 ? '' : 's'}</span>
+            </div>
+
+            {groups.length === 0 && <EmptyState theme={theme} text="No history yet for this client." />}
+
+            {groups.map(g => (
+              <Card theme={theme} key={g.key} padding={0}>
+                <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: theme.ink, fontFamily: theme.serif, letterSpacing: -0.2 }}>{g.label}</div>
+                  <div style={{ fontSize: 11, color: theme.inkMuted }}>{g.items.length} entr{g.items.length === 1 ? 'y' : 'ies'}</div>
+                </div>
+                {g.items.map(renderItem)}
+              </Card>
+            ))}
+          </div>
+        );
+      })()}
 
       {tab === 'timeline' && (
         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
