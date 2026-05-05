@@ -588,11 +588,14 @@ function App() {
         position: 'relative', zIndex: 10,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: 7, background: theme.accent, color: theme.accentInk,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: theme.serif, fontWeight: 700, fontSize: 14, letterSpacing: -0.5,
-          }}>G</div>
+          <img
+            src="/icons/icon-192.png"
+            alt="gsTeam"
+            style={{
+              width: 28, height: 28, borderRadius: 7, objectFit: 'cover',
+              flexShrink: 0,
+            }}
+          />
           <div style={{ flex: 1, fontSize: 12, color: theme.inkMuted, fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase' }}>
             gsTeam Scoreboard
           </div>

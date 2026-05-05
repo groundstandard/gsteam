@@ -175,12 +175,14 @@ function AuthGate({ theme, onAuthed }) {
       gap: 24,
     }}>
       <div style={{ maxWidth: 360, width: '100%', textAlign: 'center' }}>
-        <div style={{
-          width: 56, height: 56, borderRadius: 14, background: theme.accent, color: theme.accentInk,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: theme.serif, fontWeight: 700, fontSize: 28, letterSpacing: -0.5,
-          margin: '0 auto 18px',
-        }}>G</div>
+        <img
+          src="/icons/icon-192.png"
+          alt="gsTeam"
+          style={{
+            width: 56, height: 56, borderRadius: 14, objectFit: 'cover',
+            margin: '0 auto 18px', display: 'block',
+          }}
+        />
         <div style={{
           fontFamily: theme.serif, fontSize: 32, fontWeight: 600, letterSpacing: -0.5,
           lineHeight: 1.1, marginBottom: 10,
