@@ -445,8 +445,9 @@ function App() {
       })[r.name] || 'Sales';
     }
     return ({
-      'home': 'Approvals',
+      'home': 'Dashboard',
       'dashboard': 'Dashboard',
+      'approvals': 'Approvals',
       'edits': 'Edit Requests',
       'reviews': 'Reviews Inbox',
       'bonus': 'Annual Bonus',
@@ -497,8 +498,11 @@ function App() {
     }
     // Admin
     switch (route.name) {
-      case 'home':        return <AdminApprovals state={state} theme={theme} onApprove={approveAdj} onReject={rejectAdj} onAssignCA={assignCA}/>;
+      // Admin lands on Dashboard by default — Bobby 2026-05-05 ("mauuna yung
+      // dashboard page"). Approvals moved to its own route + tab.
+      case 'home':        return <AdminDashboard state={state} theme={theme} navigate={navigate}/>;
       case 'dashboard':   return <AdminDashboard state={state} theme={theme} navigate={navigate}/>;
+      case 'approvals':   return <AdminApprovals state={state} theme={theme} onApprove={approveAdj} onReject={rejectAdj} onAssignCA={assignCA}/>;
       case 'edits':       return <AdminEditApprovals state={state} theme={theme}/>;
       case 'reviews':     return <AdminReviewsInbox state={state} theme={theme}/>;
       case 'bonus':       return <AdminAnnualBonus state={state} theme={theme}/>;
@@ -544,8 +548,8 @@ function App() {
         { name: 'log-adjustment', icon: 'edit', label: 'Adjust' },
       ]
     : [
-        { name: 'home',      icon: 'shield',       label: 'Approvals' },
-        { name: 'dashboard', icon: 'chart',        label: 'Dashboard' },
+        { name: 'home',      icon: 'chart',        label: 'Dashboard' },
+        { name: 'approvals', icon: 'shield',       label: 'Approvals' },
         { name: 'bonus',     icon: 'cash',         label: 'Bonus' },
         { name: 'revenue',   icon: 'nav-score',    label: 'Revenue' },
         { name: 'clients',   icon: 'nav-accounts', label: 'Clients' },
