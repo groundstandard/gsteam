@@ -2248,6 +2248,71 @@ function AdminDashboard({ state, theme, navigate }) {
   const sliceEnd   = showAll ? totalRows : Math.min(sliceStart + effectiveSize, totalRows);
   const paged = sorted.slice(sliceStart, sliceEnd);
 
+  // Pagination toolbar — Bobby 2026-05-05 wants it ABOVE the table.
+  const PaginationBar = totalRows > 0 ? (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      flexWrap: 'wrap', gap: 12, padding: '8px 4px',
+    }}>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: theme.inkMuted }}>
+        <label htmlFor="dashboard-page-size">Show</label>
+        <select
+          id="dashboard-page-size"
+          value={pageSize}
+          onChange={(e) => {
+            const v = e.target.value;
+            setPageSize(v === 'all' ? 'all' : Number(v));
+          }}
+          style={{
+            background: theme.surface, color: theme.ink,
+            border: `1px solid ${theme.rule}`, borderRadius: 8,
+            padding: '5px 24px 5px 10px', fontSize: 12, fontWeight: 600,
+            fontFamily: 'inherit', cursor: 'pointer',
+            appearance: 'none', WebkitAppearance: 'none',
+            backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='${encodeURIComponent(theme.inkMuted)}' d='M0 0h10L5 6z'/></svg>")`,
+            backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
+          }}
+        >
+          {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+          <option value="all">All</option>
+        </select>
+        <span>per page · showing <strong style={{ color: theme.ink }}>{sliceStart + 1}–{sliceEnd}</strong> of <strong style={{ color: theme.ink }}>{totalRows}</strong></span>
+      </div>
+
+      {!showAll && totalPages > 1 && (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          {(() => {
+            const Btn = ({ disabled, onClick, children, label }) => (
+              <button
+                onClick={onClick} disabled={disabled} aria-label={label}
+                style={{
+                  minWidth: 32, height: 32, padding: '0 10px',
+                  background: disabled ? 'transparent' : theme.surface,
+                  border: `1px solid ${theme.rule}`, borderRadius: 8,
+                  color: disabled ? theme.inkMuted : theme.ink,
+                  fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                  opacity: disabled ? 0.45 : 1,
+                }}
+              >{children}</button>
+            );
+            return (
+              <>
+                <Btn disabled={safePage === 0} onClick={() => setPageIndex(0)} label="First page">«</Btn>
+                <Btn disabled={safePage === 0} onClick={() => setPageIndex(p => Math.max(0, p - 1))} label="Previous page">‹ Prev</Btn>
+                <span style={{ padding: '0 10px', fontSize: 12, color: theme.inkMuted, fontVariantNumeric: 'tabular-nums' }}>
+                  Page <strong style={{ color: theme.ink }}>{safePage + 1}</strong> of <strong style={{ color: theme.ink }}>{totalPages}</strong>
+                </span>
+                <Btn disabled={safePage >= totalPages - 1} onClick={() => setPageIndex(p => Math.min(totalPages - 1, p + 1))} label="Next page">Next ›</Btn>
+                <Btn disabled={safePage >= totalPages - 1} onClick={() => setPageIndex(totalPages - 1)} label="Last page">»</Btn>
+              </>
+            );
+          })()}
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
     <div style={{ padding: '8px 16px 100px', display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Card theme={theme} padding={14}>
@@ -2276,6 +2341,8 @@ function AdminDashboard({ state, theme, navigate }) {
           </label>
         </div>
       </Card>
+
+      {PaginationBar}
 
       <div style={{ overflowX: 'auto', background: theme.surface, border: `1px solid ${theme.rule}`, borderRadius: theme.radius }}>
         <table style={{ width: '100%', minWidth: 1400, borderCollapse: 'collapse' }}>
@@ -2330,71 +2397,6 @@ function AdminDashboard({ state, theme, navigate }) {
           </tbody>
         </table>
       </div>
-
-      {/* Pagination footer — Bobby 2026-05-05: default 50, dropdown 10/25/50/100/All. */}
-      {totalRows > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          flexWrap: 'wrap', gap: 12, padding: '8px 4px',
-        }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: theme.inkMuted }}>
-            <label htmlFor="dashboard-page-size">Show</label>
-            <select
-              id="dashboard-page-size"
-              value={pageSize}
-              onChange={(e) => {
-                const v = e.target.value;
-                setPageSize(v === 'all' ? 'all' : Number(v));
-              }}
-              style={{
-                background: theme.surface, color: theme.ink,
-                border: `1px solid ${theme.rule}`, borderRadius: 8,
-                padding: '5px 24px 5px 10px', fontSize: 12, fontWeight: 600,
-                fontFamily: 'inherit', cursor: 'pointer',
-                appearance: 'none', WebkitAppearance: 'none',
-                backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='${encodeURIComponent(theme.inkMuted)}' d='M0 0h10L5 6z'/></svg>")`,
-                backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
-              }}
-            >
-              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-              <option value="all">All</option>
-            </select>
-            <span>per page · showing <strong style={{ color: theme.ink }}>{sliceStart + 1}–{sliceEnd}</strong> of <strong style={{ color: theme.ink }}>{totalRows}</strong></span>
-          </div>
-
-          {!showAll && totalPages > 1 && (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              {(() => {
-                const Btn = ({ disabled, onClick, children, label }) => (
-                  <button
-                    onClick={onClick} disabled={disabled} aria-label={label}
-                    style={{
-                      minWidth: 32, height: 32, padding: '0 10px',
-                      background: disabled ? 'transparent' : theme.surface,
-                      border: `1px solid ${theme.rule}`, borderRadius: 8,
-                      color: disabled ? theme.inkMuted : theme.ink,
-                      fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-                      cursor: disabled ? 'not-allowed' : 'pointer',
-                      opacity: disabled ? 0.45 : 1,
-                    }}
-                  >{children}</button>
-                );
-                return (
-                  <>
-                    <Btn disabled={safePage === 0} onClick={() => setPageIndex(0)} label="First page">«</Btn>
-                    <Btn disabled={safePage === 0} onClick={() => setPageIndex(p => Math.max(0, p - 1))} label="Previous page">‹ Prev</Btn>
-                    <span style={{ padding: '0 10px', fontSize: 12, color: theme.inkMuted, fontVariantNumeric: 'tabular-nums' }}>
-                      Page <strong style={{ color: theme.ink }}>{safePage + 1}</strong> of <strong style={{ color: theme.ink }}>{totalPages}</strong>
-                    </span>
-                    <Btn disabled={safePage >= totalPages - 1} onClick={() => setPageIndex(p => Math.min(totalPages - 1, p + 1))} label="Next page">Next ›</Btn>
-                    <Btn disabled={safePage >= totalPages - 1} onClick={() => setPageIndex(totalPages - 1)} label="Last page">»</Btn>
-                  </>
-                );
-              })()}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
