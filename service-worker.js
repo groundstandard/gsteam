@@ -1,13 +1,19 @@
 // service-worker.js — CABT v1 PWA worker.
 //
 // Strategy:
-//   - App shell (HTML + JSX + manifest + icons): cache-first, fall back to network
-//   - Supabase API + OAuth + ESM CDN: bypass entirely (always network, never cached)
-//   - On a new build, BUILD_ID changes → old cache is purged on activate
+//   - HTML navigation: NETWORK-FIRST with cache fallback (so users always get
+//     the latest shell when online; falls back to cache when offline). Fixes
+//     Bobby 2026-05-05: "When I save a new version to my desktop it does not
+//     show the updates. It keeps going back to the older version."
+//   - JSX / icons / manifest: cache-first, fall back to network
+//   - Supabase API + OAuth + ESM CDN: bypass entirely
+//   - On a new build, VERSION changes → old cache is purged on activate
 //
-// 1777255980 is replaced at build time by scripts/build-pwa.mjs.
+// Bump VERSION on every deploy that ships frontend changes — the browser only
+// re-installs the SW (and re-fetches the SHELL precache) when this string
+// differs from the previously-installed copy.
 
-const VERSION = '1777578824';
+const VERSION = '1777995458';
 const CACHE   = `cabt-${VERSION}`;
 
 // Files known at install time. Other same-origin requests are cached on first hit.
@@ -108,31 +114,39 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Navigation requests get special handling on iOS: ALWAYS prefer /index.html
-  // from cache as the fastest reliable response. Skips weird cache-key matching
-  // edge cases on iOS Safari standalone where '/' and '/index.html' don't match
-  // the same way they do on Android.
+  // Navigation requests are NETWORK-FIRST: try fresh /index.html with a short
+  // timeout, fall back to cache only if the network is slow or offline. This
+  // is the fix for Bobby's "stale PWA after deploy" issue — the old cache-
+  // first behavior would always serve the previous shell, with a background
+  // refresh that only mattered on the NEXT page load (so users effectively
+  // saw last-deploy's HTML every time until they reloaded again).
   if (req.mode === 'navigate') {
-    event.respondWith(
-      caches.match('/index.html').then((cached) => {
-        if (cached) {
-          // Have cached shell — return it instantly. Background-update if online.
-          if (navigator.onLine !== false) {
-            fetch('/index.html').then((res) => {
-              if (res && res.status === 200 && res.type === 'basic') {
-                caches.open(CACHE).then((c) => c.put('/index.html', res.clone()));
-              }
-            }).catch(() => {});
-          }
-          return cached;
+    event.respondWith((async () => {
+      try {
+        // 4-second timeout on the network attempt — long enough for a real
+        // load on a flaky connection, short enough to fall back gracefully.
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 4000);
+        const fresh = await fetch('/index.html', { cache: 'no-store', signal: ctrl.signal });
+        clearTimeout(timer);
+        if (fresh && fresh.status === 200 && fresh.type === 'basic') {
+          // Update cache so offline still works with the latest shell.
+          const copy = fresh.clone();
+          caches.open(CACHE).then((c) => c.put('/index.html', copy)).catch(() => {});
+          return fresh;
         }
-        // No cached shell — try network, then fall back to offline.html
-        return fetch(req).catch(() => caches.match('/offline.html')
-          .then((off) => off || new Response('<h1>Offline</h1>', {
-            headers: { 'Content-Type': 'text/html' }, status: 503,
-          })));
-      })
-    );
+        throw new Error('non-200 navigation response');
+      } catch (_e) {
+        // Network unavailable / timed out — serve the cached shell, or the
+        // offline page if we don't have one yet.
+        const cached = await caches.match('/index.html');
+        if (cached) return cached;
+        const off = await caches.match('/offline.html');
+        return off || new Response('<h1>Offline</h1>', {
+          headers: { 'Content-Type': 'text/html' }, status: 503,
+        });
+      }
+    })());
     return;
   }
 

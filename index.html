@@ -17,7 +17,7 @@
      tab bar, etc.) so the layout knows where the iPhone notch + home indicator
      are without inflating the document beyond the viewport. */
 </style>
-  <!-- PWA · injected by scripts/build-pwa.sh · build 1777915836 -->
+  <!-- PWA · injected by scripts/build-pwa.sh · build 1777995458 -->
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0B0E14">
   <meta name="mobile-web-app-capable" content="yes">
@@ -86,11 +86,18 @@
               refreshing = true;
               window.location.reload();
             });
+            // Force-check for SW updates: on page focus and once an hour.
+            // Standalone PWAs (saved to desktop) skip the implicit update
+            // check that browsers do on regular navigation, so this poll is
+            // what catches new builds for installed users. Bobby 2026-05-05.
+            var checkUpdate = function () { try { reg.update(); } catch (_) {} };
+            window.addEventListener('focus', checkUpdate);
+            setInterval(checkUpdate, 60 * 60 * 1000);
           })
           .catch(function (e) { console.warn('[CABT] SW registration failed', e); });
       });
     }
-    window.CABT_BUILD = '1777915836';
+    window.CABT_BUILD = '1777995458';
     window.CABT_API_MODE = window.CABT_API_MODE || 'supabase';
   </script>
 </head>
