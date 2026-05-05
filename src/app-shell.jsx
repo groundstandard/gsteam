@@ -446,6 +446,7 @@ function App() {
     }
     return ({
       'home': 'Approvals',
+      'dashboard': 'Dashboard',
       'edits': 'Edit Requests',
       'reviews': 'Reviews Inbox',
       'bonus': 'Annual Bonus',
@@ -497,6 +498,7 @@ function App() {
     // Admin
     switch (route.name) {
       case 'home':        return <AdminApprovals state={state} theme={theme} onApprove={approveAdj} onReject={rejectAdj} onAssignCA={assignCA}/>;
+      case 'dashboard':   return <AdminDashboard state={state} theme={theme} navigate={navigate}/>;
       case 'edits':       return <AdminEditApprovals state={state} theme={theme}/>;
       case 'reviews':     return <AdminReviewsInbox state={state} theme={theme}/>;
       case 'bonus':       return <AdminAnnualBonus state={state} theme={theme}/>;
@@ -542,11 +544,12 @@ function App() {
         { name: 'log-adjustment', icon: 'edit', label: 'Adjust' },
       ]
     : [
-        { name: 'home',    icon: 'shield',     label: 'Approvals' },
-        { name: 'bonus',   icon: 'cash',       label: 'Bonus' },
-        { name: 'revenue', icon: 'nav-score',  label: 'Revenue' },
-        { name: 'clients', icon: 'nav-accounts', label: 'Clients' },
-        { name: 'more',    icon: 'cog',        label: 'More' },
+        { name: 'home',      icon: 'shield',       label: 'Approvals' },
+        { name: 'dashboard', icon: 'chart',        label: 'Dashboard' },
+        { name: 'bonus',     icon: 'cash',         label: 'Bonus' },
+        { name: 'revenue',   icon: 'nav-score',    label: 'Revenue' },
+        { name: 'clients',   icon: 'nav-accounts', label: 'Clients' },
+        { name: 'more',      icon: 'cog',          label: 'More' },
       ];
 
   // App body — used both inside and outside the iPhone frame

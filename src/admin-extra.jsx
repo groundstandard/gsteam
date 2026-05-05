@@ -1624,6 +1624,7 @@ function AdminAuditLog({ state, theme }) {
 
 function AdminMore({ theme, navigate, profile, onSignOut }) {
   const items = [
+    { name: 'dashboard', icon: 'chart', label: 'All-accounts dashboard', desc: 'Compare every client’s metrics in one sortable table' },
     { name: 'edits',     icon: 'edit',  label: 'Edit Requests',   desc: 'Approve protected-field edits past grace' },
     { name: 'reviews',   icon: 'star',  label: 'Reviews Inbox',   desc: 'Match incoming reviews to clients' },
     { name: 'pending-clients', icon: 'cash', label: 'Pending Clients', desc: 'Approve new Stripe customers' },
@@ -2103,7 +2104,221 @@ function AdminFormulaInspector({ state, theme, navigate }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// AdminDashboard — Bobby 2026-05-05 ("dashboard that I can view that shows
+// me everything for all of the accounts in a clear view... compare booked
+// leads, showed leads, generated leads, monthly recurring revenue... I also
+// want to be able to sort the data too").
+// One sortable table, one row per active client, with all the metrics he
+// referenced. Quarter window comes from config (falls back to current calendar
+// quarter). Reads effective monthly metrics so weekly entries roll up.
+// ─────────────────────────────────────────────────────────────────────────
+function AdminDashboard({ state, theme, navigate }) {
+  const cfg = state.config || {};
+  const today = new Date();
+  const dq = (() => {
+    const y = today.getFullYear();
+    const qIdx = Math.floor(today.getMonth() / 3);
+    const start = new Date(y, qIdx * 3, 1);
+    const end = new Date(y, qIdx * 3 + 3, 0);
+    return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+  })();
+  const qStart = cfg.quarterStart || cfg.quarter_start || dq.start;
+  const qEnd   = cfg.quarterEnd   || cfg.quarter_end   || dq.end;
+
+  const [includeCancelled, setIncludeCancelled] = React.useState(false);
+  const [search, setSearch] = React.useState('');
+  const [sortKey, setSortKey] = React.useState('name');
+  const [sortDir, setSortDir] = React.useState('asc');
+
+  const allClients = (state.clients || [])
+    .filter(c => includeCancelled ? true : !c.cancelDate)
+    .filter(c => !search ||
+      (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (c.id   || '').toLowerCase().includes(search.toLowerCase()));
+
+  // Build one row per client — quarterly aggregated
+  const rows = allClients.map(c => {
+    const eff = (typeof CABT_effectiveMonthlyMetrics === 'function')
+      ? CABT_effectiveMonthlyMetrics(state.monthlyMetrics, state.weeklyMetrics, c.id)
+      : (state.monthlyMetrics || []).filter(m => m.clientId === c.id);
+    const inQ = eff.filter(m => m.month && m.month >= qStart && m.month <= qEnd);
+    const last = inQ[inQ.length - 1];
+    const sumQ = (k) => inQ.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+    const sub = CABT_clientSubScores(c, state.monthlyMetrics, state.surveys, state.config, today, state.weeklyMetrics || []);
+    const ca = (state.cas || []).find(x => x.id === c.assignedCA);
+    const qLeads = sumQ('leadsGenerated');
+    const qSpend = sumQ('adSpend');
+    return {
+      id: c.id,
+      name: c.name,
+      caName: ca ? ca.name : '—',
+      caId: ca ? ca.id : '',
+      tier: c.tier || 'standard',
+      cancelled: !!c.cancelDate,
+      mrr: last ? Number(last.clientMRR || 0) : 0,
+      revenue: last ? Number(last.clientGrossRevenue || last.clientMRR || 0) : 0,
+      adSpend: qSpend,
+      leadCost: qLeads > 0 ? qSpend / qLeads : 0,
+      leadsGenerated: qLeads,
+      apptsBooked:    sumQ('apptsBooked'),
+      leadsShowed:    sumQ('leadsShowed'),
+      leadsSigned:    sumQ('leadsSigned'),
+      studentsCancelled: sumQ('studentsCancelled'),
+      composite:  sub.performance != null ? sub.performance : null,
+      mrrGrowth:  sub.mrrGrowth,
+      leadCostScore: sub.leadCost,
+      adSpendScore:  sub.adSpend,
+      funnelScore:   sub.funnel,
+      attritionScore: sub.attrition,
+      monthsLogged: inQ.length,
+    };
+  });
+
+  // Sort
+  const sorted = [...rows].sort((a, b) => {
+    const av = a[sortKey];
+    const bv = b[sortKey];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    return sortDir === 'asc' ? av - bv : bv - av;
+  });
+
+  const setSort = (k) => {
+    if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(k); setSortDir(k === 'name' || k === 'caName' ? 'asc' : 'desc'); }
+  };
+
+  const Th = ({ k, children, align = 'left', width }) => {
+    const active = sortKey === k;
+    return (
+      <th onClick={() => setSort(k)} style={{
+        textAlign: align, padding: '10px 8px',
+        fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase',
+        color: active ? theme.ink : theme.inkMuted,
+        cursor: 'pointer', borderBottom: `1px solid ${theme.rule}`,
+        background: theme.bgElev, position: 'sticky', top: 0, zIndex: 1,
+        whiteSpace: 'nowrap', userSelect: 'none', width,
+      }}>
+        {children}
+        {active && <span style={{ marginLeft: 4, opacity: 0.7 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+      </th>
+    );
+  };
+  const Td = ({ children, align = 'left', mono, color, bold, status }) => (
+    <td style={{
+      padding: '10px 8px', fontSize: 12,
+      color: color || theme.ink,
+      fontFamily: mono ? (theme.mono || 'monospace') : 'inherit',
+      fontVariantNumeric: mono ? 'tabular-nums' : 'normal',
+      fontWeight: bold ? 700 : 500,
+      textAlign: align, whiteSpace: 'nowrap',
+      borderBottom: `1px solid ${theme.rule}`,
+    }}>
+      {status && (
+        <span style={{
+          display: 'inline-block', width: 8, height: 8, borderRadius: 4,
+          background: STATUS[status] || theme.inkMuted, marginRight: 6,
+          verticalAlign: 'middle',
+        }}/>
+      )}
+      {children}
+    </td>
+  );
+  const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString());
+  const money = (n) => (n == null ? '—' : '$' + Math.round(Number(n)).toLocaleString());
+  const pct = (n) => (n == null ? '—' : (n * 100).toFixed(0));
+  const status = (n) => (n == null ? 'gray' : (n >= 0.80 ? 'green' : n >= 0.60 ? 'yellow' : 'red'));
+
+  return (
+    <div style={{ padding: '8px 16px 100px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <Card theme={theme} padding={14}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <SectionLabel theme={theme}>All-accounts dashboard</SectionLabel>
+            <div style={{ fontSize: 12, color: theme.inkMuted, marginTop: 4 }}>
+              Quarter {qStart} → {qEnd} · {sorted.length} client{sorted.length === 1 ? '' : 's'}{includeCancelled ? ' (incl. cancelled)' : ' (active only)'} · click any column to sort
+            </div>
+          </div>
+          <input
+            type="search"
+            placeholder="Search by client name or id…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{
+              minWidth: 220, padding: '8px 12px',
+              background: theme.surface, color: theme.ink,
+              border: `1px solid ${theme.rule}`, borderRadius: 8,
+              fontSize: 13, fontFamily: 'inherit', outline: 'none',
+            }}
+          />
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: theme.inkMuted, cursor: 'pointer' }}>
+            <input type="checkbox" checked={includeCancelled} onChange={(e) => setIncludeCancelled(e.target.checked)} />
+            Include cancelled
+          </label>
+        </div>
+      </Card>
+
+      <div style={{ overflowX: 'auto', background: theme.surface, border: `1px solid ${theme.rule}`, borderRadius: theme.radius }}>
+        <table style={{ width: '100%', minWidth: 1400, borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <Th k="name">Client</Th>
+              <Th k="caName">CA</Th>
+              <Th k="tier">Tier</Th>
+              <Th k="composite" align="right">Composite</Th>
+              <Th k="mrr" align="right">MRR</Th>
+              <Th k="revenue" align="right">Revenue</Th>
+              <Th k="adSpend" align="right">Ad Spend</Th>
+              <Th k="leadCost" align="right">Lead $</Th>
+              <Th k="leadsGenerated" align="right">Leads</Th>
+              <Th k="apptsBooked" align="right">Booked</Th>
+              <Th k="leadsShowed" align="right">Showed</Th>
+              <Th k="leadsSigned" align="right">Signed</Th>
+              <Th k="studentsCancelled" align="right">Cancel</Th>
+              <Th k="monthsLogged" align="right">Months</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.length === 0 && (
+              <tr><td colSpan={14} style={{ padding: 24, textAlign: 'center', color: theme.inkMuted, fontSize: 13 }}>No clients match this filter.</td></tr>
+            )}
+            {sorted.map(r => (
+              <tr key={r.id}
+                  onClick={() => navigate('client-calc', { clientId: r.id })}
+                  style={{ cursor: 'pointer' }}>
+                <Td bold>
+                  <span style={{ marginRight: 6 }}>{r.name}</span>
+                  <span style={{ fontFamily: theme.mono || 'monospace', fontSize: 10, color: theme.inkMuted }}>{r.id}</span>
+                  {r.cancelled && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: STATUS.red, letterSpacing: 0.4, textTransform: 'uppercase' }}>cancelled</span>}
+                </Td>
+                <Td color={theme.inkSoft}>{r.caName}</Td>
+                <Td color={theme.inkSoft}>
+                  <span style={{ textTransform: 'uppercase', fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>{r.tier}</span>
+                </Td>
+                <Td align="right" mono bold status={status(r.composite)}>{pct(r.composite)}</Td>
+                <Td align="right" mono>{money(r.mrr)}</Td>
+                <Td align="right" mono>{money(r.revenue)}</Td>
+                <Td align="right" mono>{money(r.adSpend)}</Td>
+                <Td align="right" mono>{r.leadCost ? money(r.leadCost) : '—'}</Td>
+                <Td align="right" mono>{fmt(r.leadsGenerated)}</Td>
+                <Td align="right" mono>{fmt(r.apptsBooked)}</Td>
+                <Td align="right" mono>{fmt(r.leadsShowed)}</Td>
+                <Td align="right" mono>{fmt(r.leadsSigned)}</Td>
+                <Td align="right" mono color={r.studentsCancelled > 0 ? STATUS.red : theme.ink}>{fmt(r.studentsCancelled)}</Td>
+                <Td align="right" mono color={theme.inkMuted}>{r.monthsLogged}/3</Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 Object.assign(window, {
   AdminAnnualBonus, AdminRevenueLedger, AdminClientRollup, AdminClientCalc, AdminOpenQuestions, AdminAuditLog, AdminMore,
-  AdminAddClient, AdminPendingClients, AdminFormulaInspector, AdminBulkCadence, CABT_nextClientId: nextClientId,
+  AdminAddClient, AdminPendingClients, AdminFormulaInspector, AdminBulkCadence, AdminDashboard, CABT_nextClientId: nextClientId,
 });
