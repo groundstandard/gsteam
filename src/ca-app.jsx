@@ -135,25 +135,17 @@ function CAHome({ state, ca, theme, density, navigate }) {
 
   return (
     <div style={{ padding: '8px 16px 100px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Greeting + bonus card */}
-      <div style={{
-        background: theme.accent, color: theme.accentInk,
-        borderRadius: theme.radius + 4, padding: '22px 22px 20px',
-        position: 'relative', overflow: 'hidden',
-      }}>
-        <div style={{
-          position: 'absolute', top: -40, right: -40, width: 180, height: 180,
-          borderRadius: '50%', background: theme.gold, opacity: 0.18,
-        }} />
-        <div style={{ fontFamily: theme.serif, fontSize: 13, opacity: 0.7, letterSpacing: 0.3, marginBottom: 4 }}>
+      {/* Greeting + headline — plain text on the page background. Bobby
+          2026-05-06: "Lets get rid of the yellow and purple backgrounds.
+          instead make the 4 cards background yellow or purple." */}
+      <div style={{ padding: '4px 4px 0' }}>
+        <div style={{ fontFamily: theme.serif, fontSize: 13, color: theme.inkMuted, letterSpacing: 0.3, marginBottom: 6 }}>
           Hey {ca.name.split(' ')[0]} — Q2 2026
         </div>
-        <div style={{ fontFamily: theme.serif, fontSize: 22, fontWeight: 400, lineHeight: 1.25, letterSpacing: -0.3, marginBottom: 14, maxWidth: 320 }}>
+        <div style={{ fontFamily: theme.serif, fontSize: 22, fontWeight: 500, color: theme.ink, lineHeight: 1.25, letterSpacing: -0.3, maxWidth: 540 }}>
           {(() => {
-            // Make the headline truthful when projection = $0. Don't say
-            // "on track for $0" — explain *why* it's $0 (Bobby 2026-05-04).
             if (projected > 0) {
-              return <>You're on track for <em style={{ color: theme.gold, fontStyle: 'normal', fontWeight: 600 }}>{CABT_fmtMoney(projected)}</em> this quarter.</>;
+              return <>You're on track for <em style={{ color: theme.accent, fontStyle: 'normal', fontWeight: 700 }}>{CABT_fmtMoney(projected)}</em> this quarter.</>;
             }
             if (!score.totalPot || score.totalPot <= 0) {
               return <>Bonus pot for Q2 2026 isn't set yet. Admin → Quarter inputs.</>;
@@ -162,67 +154,65 @@ function CAHome({ state, ca, theme, density, navigate }) {
               return <>No bonus-eligible MRR on your book yet — log monthly metrics to qualify.</>;
             }
             if (!score.composite || score.composite <= 0) {
-              return <>Projected payout: <em style={{ color: theme.gold, fontStyle: 'normal', fontWeight: 600 }}>$0</em> — composite at zero. Log data to lift Performance / Growth.</>;
+              return <>Projected payout: <em style={{ color: theme.accent, fontStyle: 'normal', fontWeight: 700 }}>$0</em> — composite at zero. Log data to lift Performance / Growth.</>;
             }
-            return <>Projected payout: <em style={{ color: theme.gold, fontStyle: 'normal', fontWeight: 600 }}>$0</em> this quarter.</>;
+            return <>Projected payout: <em style={{ color: theme.accent, fontStyle: 'normal', fontWeight: 700 }}>$0</em> this quarter.</>;
           })()}
         </div>
+      </div>
 
-        {/* Score cards — circular rings, uniform across all four. Bobby
-            2026-05-06: "look professional... naka align siya." All cards
-            share the same surface treatment + sizing so it reads as one
-            row instead of one emphasized + three faded. */}
-        <div style={{
-          position: 'relative', zIndex: 1,
-          display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-          gap: 10, maxWidth: 640,
-        }}>
-          {[
-            { key: 'composite',   label: 'Composite',   value: score.composite   },
-            { key: 'performance', label: 'Performance', value: score.performance },
-            { key: 'retention',   label: 'Retention',   value: score.retention   },
-            { key: 'growth',      label: 'Growth',      value: score.growth      },
-          ].map((s) => {
-            const v = s.value;
-            const display = (v != null && Number.isFinite(v)) ? (v * 100).toFixed(0) : '—';
-            const statusKey = CABT_scoreToStatus(v);
-            const ringColor = statusKey === 'gray' ? 'rgba(0,0,0,0.18)' : STATUS[statusKey];
-            return (
-              <div key={s.key} style={{
-                background: '#FAFAF7',
-                border: '1px solid rgba(0,0,0,0.10)',
-                borderRadius: 14,
-                padding: '14px 8px',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                color: theme.accentInk,
-                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                minHeight: 120,
-              }}>
-                <ScoreRing
-                  value={v}
-                  size={84}
-                  stroke={5}
-                  color={ringColor}
-                  bg="rgba(0,0,0,0.08)"
-                  label={
-                    <div style={{ textAlign: 'center', lineHeight: 1 }}>
-                      <div style={{
-                        fontFamily: theme.serif, fontSize: 24, fontWeight: 700,
-                        color: theme.accentInk, fontVariantNumeric: 'tabular-nums',
-                        letterSpacing: -0.5,
-                      }}>{display}</div>
-                      <div style={{
-                        fontSize: 9, fontWeight: 800, letterSpacing: 0.6,
-                        marginTop: 4, textTransform: 'uppercase',
-                        color: theme.accentInk, opacity: 0.7,
-                      }}>{s.label}</div>
-                    </div>
-                  }
-                />
-              </div>
-            );
-          })}
-        </div>
+      {/* Score cards — each card carries the brand color (yellow or navy
+          per active theme). Number lives inside the ring; label sits OUTSIDE
+          below the ring so it can't overlap the stroke. Bobby 2026-05-06:
+          "purple bg has white letters; yellow bg has black letters; fix the
+          formatting so letters do not overlap the circle graphs." Both rules
+          satisfied via theme.accentInk + label-outside-ring layout. */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+        gap: 10, maxWidth: 720,
+      }}>
+        {[
+          { key: 'composite',   label: 'Composite',   value: score.composite   },
+          { key: 'performance', label: 'Performance', value: score.performance },
+          { key: 'retention',   label: 'Retention',   value: score.retention   },
+          { key: 'growth',      label: 'Growth',      value: score.growth      },
+        ].map((s) => {
+          const v = s.value;
+          const display = (v != null && Number.isFinite(v)) ? (v * 100).toFixed(0) : '—';
+          const statusKey = CABT_scoreToStatus(v);
+          const ringColor = statusKey === 'gray' ? theme.accentInk + '40' : STATUS[statusKey];
+          return (
+            <div key={s.key} style={{
+              background: theme.accent,
+              color: theme.accentInk,
+              border: `1px solid ${theme.accentInk}1A`,
+              borderRadius: 16,
+              padding: '14px 10px 12px',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+              boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+            }}>
+              <ScoreRing
+                value={v}
+                size={84}
+                stroke={5}
+                color={ringColor}
+                bg={theme.accentInk + '24'}
+                label={
+                  <div style={{
+                    fontFamily: theme.serif, fontSize: 26, fontWeight: 700,
+                    color: theme.accentInk, fontVariantNumeric: 'tabular-nums',
+                    letterSpacing: -0.5, lineHeight: 1,
+                  }}>{display}</div>
+                }
+              />
+              <div style={{
+                fontSize: 10, fontWeight: 800, letterSpacing: 0.7,
+                textTransform: 'uppercase', color: theme.accentInk, opacity: 0.85,
+                lineHeight: 1,
+              }}>{s.label}</div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Book health chips — 4 buckets so the counts add up to the full
