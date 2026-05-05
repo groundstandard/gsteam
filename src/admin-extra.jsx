@@ -2176,15 +2176,27 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
       (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
       (c.id   || '').toLowerCase().includes(search.toLowerCase()));
 
-  // Months in the active window (used for "X/N" coverage indicator)
-  const monthsInWindow = (() => {
-    if (period === 'all') return null; // no upper bound to display
-    try {
-      const s = new Date(qStart);
-      const e = new Date(qEnd);
-      return Math.max(1, (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth()) + 1);
-    } catch (_e) { return null; }
-  })();
+  // Months in the active window. Parses YYYY-MM-DD directly so timezone
+  // doesn't shift the month boundary (Bobby 2026-05-06: dashboard read "1/4"
+  // for "this quarter" because new Date('2026-04-01') in a UTC- offset zone
+  // returned March via getMonth(), inflating the count to 4).
+  const monthsBetweenIso = (a, b) => {
+    if (!a || !b) return 0;
+    const [ay, am] = String(a).split('-').map(Number);
+    const [by, bm] = String(b).split('-').map(Number);
+    if (!ay || !am || !by || !bm) return 0;
+    return Math.max(1, (by - ay) * 12 + (bm - am) + 1);
+  };
+  // For non-"all" periods this is uniform across rows; for "all" we use a
+  // per-client expected (months since signDate → today/cancelDate).
+  const monthsInWindow = period === 'all' ? null : monthsBetweenIso(qStart, qEnd);
+  const todayIsoStr = iso(today);
+  const monthsForClient = (c) => {
+    if (period !== 'all') return monthsInWindow;
+    if (!c.signDate) return null;
+    const endIso = c.cancelDate || todayIsoStr;
+    return monthsBetweenIso(c.signDate.slice(0, 7) + '-01', endIso);
+  };
 
   // Build one row per client — aggregated over the active window
   const rows = allClients.map(c => {
@@ -2221,6 +2233,7 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
       funnelScore:   sub.funnel,
       attritionScore: sub.attrition,
       monthsLogged: inQ.length,
+      monthsExpected: monthsForClient(c),
     };
   });
 
@@ -2477,7 +2490,7 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
                 <Td align="right" mono>{fmt(r.leadsShowed)}</Td>
                 <Td align="right" mono>{fmt(r.leadsSigned)}</Td>
                 <Td align="right" mono color={r.studentsCancelled > 0 ? STATUS.red : theme.ink}>{fmt(r.studentsCancelled)}</Td>
-                <Td align="right" mono color={theme.inkMuted}>{r.monthsLogged}{monthsInWindow ? `/${monthsInWindow}` : ''}</Td>
+                <Td align="right" mono color={theme.inkMuted}>{r.monthsLogged}{r.monthsExpected ? `/${r.monthsExpected}` : ''}</Td>
               </tr>
             ))}
           </tbody>
