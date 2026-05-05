@@ -405,12 +405,10 @@ function ActivityRow({ theme, title, date, kind, isLast }) {
 }
 
 // ── My Book ─────────────────────────────────────────────────────────────────
-// Bobby 2026-05-05: "kung per tab sa loob nang tab nang account may dashboard
-// na ginawa natin." Two view modes inside the Accounts page — 'list' (the
-// existing client list) and 'dashboard' (the sortable AdminDashboard scoped
-// to this CA's own book).
+// Bobby 2026-05-05 (final): Dashboard moved out of the Accounts sub-tabs and
+// into the left sidebar between Today and Accounts. Accounts is now a plain
+// list view again — no internal view toggle.
 function CABook({ state, ca, theme, navigate, initialFilter }) {
-  const [view, setView] = React.useState('list'); // 'list' | 'dashboard'
   const [filter, setFilter] = React.useState(initialFilter || 'all');
   const myClients = state.clients.filter(c => c.assignedCA === ca.id && !c.cancelDate);
   const currentMonth = CABT_currentMonthIso();
@@ -443,52 +441,6 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
     { value: 'needs-data',  label: 'Needs data', count: enriched.filter(e => e.needsData).length },
   ];
 
-  // Sub-tab strip — List ↔ Dashboard inside Accounts.
-  const ViewTabs = (
-    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-      {[
-        { v: 'list',      label: 'List',      icon: 'nav-accounts' },
-        { v: 'dashboard', label: 'Dashboard', icon: 'chart' },
-      ].map(t => (
-        <button
-          key={t.v}
-          onClick={() => setView(t.v)}
-          className="cabt-btn-press"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '7px 12px', height: 34, fontSize: 12, fontWeight: 700,
-            background: view === t.v ? theme.ink : theme.surface,
-            color: view === t.v ? theme.accentInk : theme.ink,
-            border: `1px solid ${view === t.v ? theme.ink : theme.rule}`,
-            borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
-          }}
-        >
-          <Icon name={t.icon} size={13} stroke={2} color={view === t.v ? theme.accentInk : theme.inkMuted}/>
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
-
-  // Dashboard view — render the same AdminDashboard component, scoped to
-  // this CA's clients only. Wrapped here so the Accounts page hosts both
-  // views under one route.
-  if (view === 'dashboard') {
-    return (
-      <div style={{ paddingBottom: 100 }}>
-        <div style={{
-          position: 'sticky', top: 0, zIndex: 5,
-          background: theme.bg + 'EE', backdropFilter: 'blur(8px)',
-          padding: '8px 16px 12px',
-          borderBottom: `1px solid ${theme.rule}`,
-        }}>
-          {ViewTabs}
-        </div>
-        <AdminDashboard state={state} theme={theme} navigate={navigate} scopeCa={ca?.id}/>
-      </div>
-    );
-  }
-
   return (
     <div style={{ paddingBottom: 100 }}>
       <div style={{
@@ -497,8 +449,6 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
         padding: '8px 16px 12px',
         borderBottom: `1px solid ${theme.rule}`,
       }}>
-        {ViewTabs}
-
         <div style={{
           display: 'flex', gap: 8, overflowX: 'auto', WebkitOverflowScrolling: 'touch',
           scrollbarWidth: 'none', margin: '0 -16px', padding: '0 16px',

@@ -68,3 +68,47 @@ fs.writeFileSync(outPath, out, 'utf8');
 console.log('[build-config] ✓ wrote config.js (' + out.length + ' bytes)');
 console.log('[build-config]   SUPABASE_URL:      ' + (SUPABASE_URL ? '✓ set' : '✗ MISSING'));
 console.log('[build-config]   SUPABASE_ANON_KEY: ' + (SUPABASE_ANON_KEY ? '✓ set' : '✗ MISSING'));
+
+// ── PWA version stamping ───────────────────────────────────────────────────
+// Bobby 2026-05-05: "When I save a new version to my desktop it does not show
+// the updates." Root cause was a stale VERSION in service-worker.js, which
+// the browser uses to decide whether to reinstall the SW + re-cache the app
+// shell. Now stamped automatically on every Vercel build (or whenever this
+// script runs) so installed PWAs detect new builds without any manual step.
+//
+// Prefer Vercel's deploy SHA when available (stable per deploy, distinct per
+// commit); fall back to current Unix timestamp for local dev runs.
+const VERCEL_SHA = process.env.VERCEL_GIT_COMMIT_SHA || '';
+const stamp = VERCEL_SHA ? VERCEL_SHA.slice(0, 12) : String(Math.floor(Date.now() / 1000));
+
+const swPath  = path.join(__dirname, '..', 'service-worker.js');
+const idxPath = path.join(__dirname, '..', 'index.html');
+
+try {
+  let sw = fs.readFileSync(swPath, 'utf8');
+  const before = sw;
+  sw = sw.replace(/^const VERSION = '[^']+';/m, `const VERSION = '${stamp}';`);
+  if (sw !== before) {
+    fs.writeFileSync(swPath, sw, 'utf8');
+    console.log('[build-config] ✓ stamped service-worker.js VERSION = ' + stamp);
+  } else {
+    console.warn('[build-config] ⚠ service-worker.js: VERSION line not found, skipped stamp');
+  }
+} catch (e) {
+  console.warn('[build-config] ⚠ could not stamp service-worker.js:', e.message);
+}
+
+try {
+  let idx = fs.readFileSync(idxPath, 'utf8');
+  const before = idx;
+  idx = idx.replace(/(<!-- PWA · injected by scripts\/build-pwa\.sh · build )[^ ]+( -->)/, `$1${stamp}$2`);
+  idx = idx.replace(/(window\.CABT_BUILD = ')[^']+(';)/, `$1${stamp}$2`);
+  if (idx !== before) {
+    fs.writeFileSync(idxPath, idx, 'utf8');
+    console.log('[build-config] ✓ stamped index.html build = ' + stamp);
+  } else {
+    console.warn('[build-config] ⚠ index.html: build markers not found, skipped stamp');
+  }
+} catch (e) {
+  console.warn('[build-config] ⚠ could not stamp index.html:', e.message);
+}

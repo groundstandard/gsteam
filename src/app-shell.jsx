@@ -537,6 +537,7 @@ function App() {
   const tabs = role === 'CA'
     ? [
         { name: 'home', icon: 'nav-today', label: 'Today' },
+        { name: 'dashboard', icon: 'chart', label: 'Dashboard' },
         { name: 'book', icon: 'nav-accounts', label: 'Accounts' },
         { name: 'log-picker', icon: 'nav-log', label: 'Log', primary: true },
         { name: 'scorecard', icon: 'nav-score', label: 'Score' },
@@ -759,7 +760,7 @@ function App() {
               fontSize: 10, fontWeight: 600, color: theme.inkMuted,
               letterSpacing: 1, textTransform: 'uppercase',
               padding: '12px 12px 0', borderTop: `1px solid ${theme.rule}`,
-            }}>gsTeam · {role}</div>
+            }}>gsTeam Scoreboard</div>
           </nav>
           {/* Content area — full-width admin console (Bobby asked for full
              screen on all devices). No floating-nav clearance needed when
