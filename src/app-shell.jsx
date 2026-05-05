@@ -523,6 +523,7 @@ function App() {
       case 'revenue':     return <AdminRevenueLedger state={state} theme={theme}/>;
       case 'clients':         return <AdminClientRollup state={state} theme={theme} navigate={navigate}/>;
       case 'client-calc':      return <AdminClientCalc state={state} theme={theme} clientId={route.params.clientId} navigate={navigate} onSetCadence={setCadence} onSetRates={setClientRates}/>;
+      case 'client-detail':    return <ClientDetail state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} clientId={route.params.clientId} navigate={navigate}/>;
       case 'add-client':       return <AdminAddClient state={state} theme={theme} navigate={navigate} onSubmit={submitClient} presetFromStripe={route.params.presetFromStripe}/>;
       case 'pending-clients':  return <AdminPendingClients state={state} theme={theme} navigate={navigate}/>;
       case 'questions':   return <AdminOpenQuestions state={state} theme={theme}/>;

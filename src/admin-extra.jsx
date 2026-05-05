@@ -2119,15 +2119,44 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
   // "Lets make this Dashboard accessible on the The Accounts seciton too").
   const cfg = state.config || {};
   const today = new Date();
-  const dq = (() => {
+  const iso = (d) => d.toISOString().slice(0, 10);
+
+  // Bobby 2026-05-06: "I want to also be able to filter based on date range...
+  // per month, quarter, year, etc." Period selector with presets + custom.
+  const [period, setPeriod] = React.useState('quarter'); // month | quarter | year | all | custom
+  const [customStart, setCustomStart] = React.useState('');
+  const [customEnd,   setCustomEnd]   = React.useState('');
+
+  const periodWindow = (() => {
     const y = today.getFullYear();
-    const qIdx = Math.floor(today.getMonth() / 3);
-    const start = new Date(y, qIdx * 3, 1);
-    const end = new Date(y, qIdx * 3 + 3, 0);
-    return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+    if (period === 'month') {
+      const start = new Date(y, today.getMonth(), 1);
+      const end   = new Date(y, today.getMonth() + 1, 0);
+      return { start: iso(start), end: iso(end), label: start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) };
+    }
+    if (period === 'quarter') {
+      const qIdx = Math.floor(today.getMonth() / 3);
+      const start = new Date(y, qIdx * 3, 1);
+      const end   = new Date(y, qIdx * 3 + 3, 0);
+      const cfgStart = cfg.quarterStart || cfg.quarter_start;
+      const cfgEnd   = cfg.quarterEnd   || cfg.quarter_end;
+      return { start: cfgStart || iso(start), end: cfgEnd || iso(end), label: `Q${qIdx + 1} ${y}` };
+    }
+    if (period === 'year') {
+      return { start: `${y}-01-01`, end: `${y}-12-31`, label: `${y}` };
+    }
+    if (period === 'all') {
+      return { start: '0000-01-01', end: '9999-12-31', label: 'All time' };
+    }
+    // custom
+    return {
+      start: customStart || '0000-01-01',
+      end:   customEnd   || '9999-12-31',
+      label: customStart && customEnd ? `${customStart} → ${customEnd}` : 'Custom (set dates)',
+    };
   })();
-  const qStart = cfg.quarterStart || cfg.quarter_start || dq.start;
-  const qEnd   = cfg.quarterEnd   || cfg.quarter_end   || dq.end;
+  const qStart = periodWindow.start;
+  const qEnd   = periodWindow.end;
 
   const [includeCancelled, setIncludeCancelled] = React.useState(false);
   const [search, setSearch] = React.useState('');
@@ -2147,7 +2176,17 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
       (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
       (c.id   || '').toLowerCase().includes(search.toLowerCase()));
 
-  // Build one row per client — quarterly aggregated
+  // Months in the active window (used for "X/N" coverage indicator)
+  const monthsInWindow = (() => {
+    if (period === 'all') return null; // no upper bound to display
+    try {
+      const s = new Date(qStart);
+      const e = new Date(qEnd);
+      return Math.max(1, (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth()) + 1);
+    } catch (_e) { return null; }
+  })();
+
+  // Build one row per client — aggregated over the active window
   const rows = allClients.map(c => {
     const eff = (typeof CABT_effectiveMonthlyMetrics === 'function')
       ? CABT_effectiveMonthlyMetrics(state.monthlyMetrics, state.weeklyMetrics, c.id)
@@ -2320,11 +2359,11 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
   return (
     <div style={{ padding: '8px 16px 100px', display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Card theme={theme} padding={14}>
-        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 10 }}>
           <div style={{ flex: 1, minWidth: 200 }}>
             <SectionLabel theme={theme}>All-accounts dashboard</SectionLabel>
             <div style={{ fontSize: 12, color: theme.inkMuted, marginTop: 4 }}>
-              Quarter {qStart} → {qEnd} · {sorted.length} client{sorted.length === 1 ? '' : 's'}{includeCancelled ? ' (incl. cancelled)' : ' (active only)'} · click any column to sort
+              {periodWindow.label} · {qStart} → {qEnd} · {sorted.length} client{sorted.length === 1 ? '' : 's'}{includeCancelled ? ' (incl. cancelled)' : ' (active only)'} · click any column to sort
             </div>
           </div>
           <input
@@ -2343,6 +2382,48 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
             <input type="checkbox" checked={includeCancelled} onChange={(e) => setIncludeCancelled(e.target.checked)} />
             Include cancelled
           </label>
+        </div>
+
+        {/* Period selector — Bobby 2026-05-06: choose month / quarter / year /
+            all-time / custom date range. */}
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <span style={{ fontSize: 12, color: theme.inkMuted, fontWeight: 600 }}>Period</span>
+          {[
+            { v: 'month',   label: 'This month'   },
+            { v: 'quarter', label: 'This quarter' },
+            { v: 'year',    label: 'This year'    },
+            { v: 'all',     label: 'All time'     },
+            { v: 'custom',  label: 'Custom'       },
+          ].map(p => (
+            <button key={p.v} onClick={() => setPeriod(p.v)} style={{
+              padding: '6px 12px', fontSize: 12, fontWeight: 700,
+              background: period === p.v ? theme.ink : theme.surface,
+              color: period === p.v ? (theme.accentInk || '#fff') : theme.ink,
+              border: `1px solid ${period === p.v ? theme.ink : theme.rule}`,
+              borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+            }}>{p.label}</button>
+          ))}
+          {period === 'custom' && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
+              <input
+                type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+                style={{
+                  padding: '5px 8px', background: theme.surface, color: theme.ink,
+                  border: `1px solid ${theme.rule}`, borderRadius: 8, fontSize: 12,
+                  fontFamily: 'inherit',
+                }}
+              />
+              <span style={{ fontSize: 11, color: theme.inkMuted }}>→</span>
+              <input
+                type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+                style={{
+                  padding: '5px 8px', background: theme.surface, color: theme.ink,
+                  border: `1px solid ${theme.rule}`, borderRadius: 8, fontSize: 12,
+                  fontFamily: 'inherit',
+                }}
+              />
+            </div>
+          )}
         </div>
       </Card>
 
@@ -2375,7 +2456,7 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
             )}
             {paged.map(r => (
               <tr key={r.id}
-                  onClick={() => navigate('client-calc', { clientId: r.id })}
+                  onClick={() => navigate('client-detail', { clientId: r.id })}
                   style={{ cursor: 'pointer' }}>
                 <Td mono color={theme.inkMuted}>{r.id}</Td>
                 <Td bold>
@@ -2396,7 +2477,7 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
                 <Td align="right" mono>{fmt(r.leadsShowed)}</Td>
                 <Td align="right" mono>{fmt(r.leadsSigned)}</Td>
                 <Td align="right" mono color={r.studentsCancelled > 0 ? STATUS.red : theme.ink}>{fmt(r.studentsCancelled)}</Td>
-                <Td align="right" mono color={theme.inkMuted}>{r.monthsLogged}/3</Td>
+                <Td align="right" mono color={theme.inkMuted}>{r.monthsLogged}{monthsInWindow ? `/${monthsInWindow}` : ''}</Td>
               </tr>
             ))}
           </tbody>
