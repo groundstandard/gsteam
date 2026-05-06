@@ -5,6 +5,34 @@
 //   • Per-Client Calc — exact inputs feeding each sub-score for one client
 //   • Open Questions  — open product/policy questions for leadership
 
+// ── Sparkline — tiny inline trend chart (TKT-12.3 MRR Trend column) ──────
+function Sparkline({ values, theme, width = 80, height = 22, stroke = 1.5 }) {
+  if (!values || values.length < 2) {
+    return <span style={{ color: theme.inkMuted, fontSize: 11 }}>—</span>;
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = (max - min) || 1;
+  const stepX = (width - 4) / (values.length - 1);
+  const points = values.map((v, i) => {
+    const x = 2 + i * stepX;
+    const y = 2 + (height - 4) * (1 - (v - min) / range);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const last = values[values.length - 1];
+  const first = values[0];
+  const trendColor = last > first ? '#43A047' : last < first ? '#E53935' : theme.inkMuted;
+  return (
+    <svg width={width} height={height} style={{ verticalAlign: 'middle' }}>
+      <polyline
+        fill="none" stroke={trendColor} strokeWidth={stroke}
+        strokeLinecap="round" strokeLinejoin="round"
+        points={points}
+      />
+    </svg>
+  );
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 function quartersOfYear(year) {
   return [
@@ -2182,9 +2210,12 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
   const [caFilter, setCaFilter] = React.useState(() => lsGet('dash:caFilter', 'all'));
   React.useEffect(() => { lsSet('dash:caFilter', caFilter); }, [caFilter]);
   // Visible-column set (managed by the gear-icon ColumnChooser modal).
+  // Default visible columns — verbatim from Bobby's PRD addendum spec:
+  // "Code · Client · Tier · CA · Status · Sign date · Months on book · MRR ·
+  //  Last metric · Composite · Performance · Retention · Growth"
   const DEFAULT_VISIBLE_COLS = [
     'code', 'name', 'tier', 'caName', 'status', 'signDate', 'monthsOnBook',
-    'mrr', 'lastMetric', 'composite', 'mrrGrowthScore', 'attritionScore',
+    'mrr', 'lastMetric', 'composite', 'performanceScore', 'retentionScore', 'growthScore',
   ];
   const [visibleCols, setVisibleCols] = React.useState(() =>
     new Set(lsGet('dash:cols', DEFAULT_VISIBLE_COLS))
@@ -2299,6 +2330,38 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
     // Last metric period as ISO (used both for sort + display)
     const lastMetricIso = last ? last.month : null;
 
+    // Per-client Retention (TKT-12.3 spec): 1.0 if active and not flagged
+    // inactive in the period; 0.0 if cancelled or flagged.
+    const perClientRetention = (c.cancelDate || flaggedInactiveInWindow) ? 0 : 1;
+
+    // Per-client Growth (Formula Guide §GROWTH at the per-client level):
+    // 1pt each — review, testimonial, case study, ≥1 referral, VIP tier,
+    // membership add-on, gear/products. Plus 0.25 per extra referral capped
+    // at +1. Max 8 per client. Only count events in the active window.
+    const eventsInWindow = eventsForClient.filter(e => e.date && e.date >= qStart && e.date <= qEnd);
+    const has = (term) => eventsInWindow.some(e => (e.eventType || '').toLowerCase().includes(term));
+    const refs = eventsInWindow.filter(e => (e.eventType || '').toLowerCase().includes('referral')).length;
+    let growthPts = 0;
+    if (has('review'))      growthPts += 1;
+    if (has('testimonial')) growthPts += 1;
+    if (has('case'))        growthPts += 1;
+    if (refs >= 1)          growthPts += 1;
+    if ((c.tier || '').toLowerCase() === 'vip') growthPts += 1;
+    if (c.hasMembershipAddon)                   growthPts += 1;
+    if (has('gear'))        growthPts += 1;
+    if (refs > 1)           growthPts += Math.min(1, (refs - 1) * 0.25);
+    const perClientGrowth = growthPts / 8;
+
+    // MRR trend — 12-month sparkline data (most recent 12 months including
+    // anything we have, oldest → newest). Used by the MRR Trend column.
+    const trend12 = (() => {
+      const rows = (CABT_effectiveMonthlyMetrics
+        ? CABT_effectiveMonthlyMetrics(state.monthlyMetrics, state.weeklyMetrics, c.id)
+        : allMonthlyMetricsState.filter(m => m.clientId === c.id)).slice();
+      rows.sort((a, b) => (a.month || '').localeCompare(b.month || ''));
+      return rows.slice(-12).map(r => Number(r.clientMRR || 0));
+    })();
+
     return {
       id: c.id,
       code: c.id,
@@ -2333,12 +2396,20 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
       studentsCancelled: qCancel,
       attritionRate:   firstStart > 0 ? qCancel / firstStart : null,
       composite:       sub.performance != null ? sub.performance : null,
+      // Per-client interpretation of the three CA-level buckets, per Bobby's
+      // PRD addendum default-visible list. Performance ≡ composite (avg of
+      // 5 perf sub-scores); Retention is 1/0 per client; Growth is the 8-pt
+      // scale at the client level.
+      performanceScore: sub.performance != null ? sub.performance : null,
+      retentionScore:   perClientRetention,
+      growthScore:      perClientGrowth,
       mrrGrowthScore:  sub.mrrGrowth,
       leadCostScore:   sub.leadCost,
       adSpendScore:    sub.adSpend,
       funnelScore:     sub.funnel,
       attritionScore:  sub.attrition,
       satisfaction:    sub.satisfaction,
+      mrrTrend:        trend12,
       lastMetric:    lastMetricIso,
       lastReview, lastTestimonial, lastReferral, lastSurvey, lastWeeklyCheckin,
       hasMembershipAddon: !!c.hasMembershipAddon,
@@ -2459,6 +2530,8 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
       mono: true, render: (r) => money(r.mrr) },
     { id: 'stripeMrr',    label: 'Stripe MRR',   group: 'Revenue',  align: 'right', sortKey: 'stripeMrr',
       mono: true, render: (r) => money(r.stripeMrr) },
+    { id: 'mrrTrend',     label: 'MRR Trend',    group: 'Revenue',  align: 'right', sortKey: 'mrr',
+      render: (r) => <Sparkline values={r.mrrTrend} theme={theme}/> },
     { id: 'revenue',      label: 'Revenue',      group: 'Revenue',  align: 'right', sortKey: 'revenue',
       mono: true, render: (r) => money(r.revenue) },
     // Funnel
@@ -2489,12 +2562,21 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
       mono: true, render: (r) => <span style={{ color: r.studentsCancelled > 0 ? STATUS.red : theme.ink }}>{fmt(r.studentsCancelled)}</span> },
     { id: 'attritionRate', label: 'Attrition %', group: 'Students', align: 'right', sortKey: 'attritionRate',
       mono: true, render: (r) => pctRate(r.attritionRate) },
-    // Sub-scores (per-client)
+    // Sub-scores (per-client). Bobby's PRD lists Performance / Retention /
+    // Growth alongside Composite — included as separate columns even though
+    // Performance ≡ Composite per-client (it's literally the same value;
+    // the registry just shows it twice for users who want both labelled).
     { id: 'composite',     label: 'Composite',   group: 'Sub-scores', align: 'right', sortKey: 'composite',
       mono: true, render: (r) => <>
         <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: STATUS[status(r.composite)] || theme.inkMuted, marginRight: 6, verticalAlign: 'middle' }}/>
         <strong>{pct(r.composite)}</strong>
       </> },
+    { id: 'performanceScore', label: 'Performance', group: 'Sub-scores', align: 'right', sortKey: 'performanceScore',
+      mono: true, render: (r) => pct(r.performanceScore) },
+    { id: 'retentionScore', label: 'Retention',   group: 'Sub-scores', align: 'right', sortKey: 'retentionScore',
+      mono: true, render: (r) => pct(r.retentionScore) },
+    { id: 'growthScore',    label: 'Growth',      group: 'Sub-scores', align: 'right', sortKey: 'growthScore',
+      mono: true, render: (r) => pct(r.growthScore) },
     { id: 'mrrGrowthScore', label: 'MRR Growth', group: 'Sub-scores', align: 'right', sortKey: 'mrrGrowthScore',
       mono: true, render: (r) => pct(r.mrrGrowthScore) },
     { id: 'leadCostScore',  label: 'Lead Cost',  group: 'Sub-scores', align: 'right', sortKey: 'leadCostScore',
