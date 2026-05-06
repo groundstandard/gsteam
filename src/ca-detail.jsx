@@ -74,12 +74,13 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
       </div>
       <Tabs
         tabs={[
-          { value: 'overview', label: 'Overview' },
-          { value: 'history',  label: 'History' },
-          { value: 'timeline', label: `Timeline · ${cTimeline.length}` },
-          { value: 'metrics',  label: `Metrics · ${cMetrics.length}` },
-          { value: 'events',   label: `Events · ${cEvents.length}` },
-          { value: 'surveys',  label: `Surveys · ${cSurveys.length}` },
+          { value: 'overview',  label: 'Overview' },
+          { value: 'dashboard', label: 'Dashboard' },
+          { value: 'history',   label: 'History' },
+          { value: 'timeline',  label: `Timeline · ${cTimeline.length}` },
+          { value: 'metrics',   label: `Metrics · ${cMetrics.length}` },
+          { value: 'events',    label: `Events · ${cEvents.length}` },
+          { value: 'surveys',   label: `Surveys · ${cSurveys.length}` },
         ]}
         value={tab} onChange={setTab} theme={theme}
       />
@@ -141,6 +142,21 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
             <KV theme={theme} label="AE"         value={state.sales.find(s => s.id === client.ae)?.name || '—'} last />
           </Card>
         </div>
+      )}
+
+      {tab === 'dashboard' && (
+        <ClientDashboardTab
+          state={state}
+          theme={theme}
+          client={client}
+          cMonthlyMetrics={cMonthlyMetrics}
+          cWeeklyMetrics={cWeeklyMetrics}
+          cEvents={cEvents}
+          cSurveys={cSurveys}
+          cWeekly={cWeekly}
+          cMonthly={cMonthly}
+          navigate={navigate}
+        />
       )}
 
       {tab === 'history' && (() => {
@@ -537,4 +553,445 @@ function EmptyState({ theme, text }) {
   );
 }
 
-Object.assign(window, { ClientDetail, KV, Stat, EmptyState });
+// ── Per-client Dashboard tab — TKT-12.4 (Bobby 2026-05-06) ──────────────────
+// Mirror of the All-accounts Dashboard at the per-client level. One row per
+// data event for THIS client (or one rollup row per period when grouped).
+// Cadence toggle: Week / Month / Quarter / Year / All (no grouping).
+// Reuses ColumnChooserModal from admin-extra.jsx for the gear-icon column
+// chooser (same pattern + persistence as TKT-12.3).
+function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetrics, cEvents, cSurveys, cWeekly, cMonthly, navigate }) {
+  // Persisted preferences — scoped to "client-dashboard" so they don't
+  // collide with the all-accounts dashboard's preferences.
+  const lsGet = (k, fb) => {
+    try { const v = window.localStorage && window.localStorage.getItem(k); return v == null ? fb : JSON.parse(v); }
+    catch (_e) { return fb; }
+  };
+  const lsSet = (k, v) => { try { window.localStorage && window.localStorage.setItem(k, JSON.stringify(v)); } catch (_e) {} };
+
+  const [cadence, setCadence] = React.useState(() => lsGet('clientDash:cadence', 'all'));
+  React.useEffect(() => { lsSet('clientDash:cadence', cadence); }, [cadence]);
+
+  const [sortKey, setSortKey] = React.useState('date');
+  const [sortDir, setSortDir] = React.useState('desc');
+  const [chooserOpen, setChooserOpen] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(() => new Set());
+
+  const DEFAULT_VISIBLE = ['date', 'type', 'caName', 'mrr', 'adSpend', 'leadsGenerated', 'apptsBooked', 'leadsShowed', 'leadsSigned', 'studentsCancelled', 'notes'];
+  const [visibleCols, setVisibleCols] = React.useState(() => new Set(lsGet('clientDash:cols', DEFAULT_VISIBLE)));
+  React.useEffect(() => { lsSet('clientDash:cols', Array.from(visibleCols)); }, [visibleCols]);
+
+  // Build the union of all events for THIS client, normalized.
+  const num = (v) => (v == null ? null : Number(v));
+  const events = React.useMemo(() => {
+    const out = [];
+    cMonthlyMetrics.forEach(m => out.push({
+      kind: 'monthly-metrics', source: 'monthly_metrics', id: m.id,
+      date: m.month, sortDate: m.month,
+      caId: m.caId, caName: state.cas.find(c => c.id === m.caId)?.name || '—',
+      mrr: num(m.clientMRR), grossRevenue: num(m.clientGrossRevenue),
+      adSpend: num(m.adSpend), leadCost: num(m.leadCost),
+      leadsGenerated: num(m.leadsGenerated),
+      apptsBooked: num(m.apptsBooked),
+      leadsShowed: num(m.leadsShowed),
+      leadsSigned: num(m.leadsSigned),
+      studentsStart: num(m.totalStudentsStart),
+      studentsAcquired: num(m.studentsAcquired),
+      studentsCancelled: num(m.studentsCancelled),
+      surveyScore: null,
+      notes: m.notes || '',
+      flaggedInactive: !!m.flaggedInactive,
+      _payload: m,
+    }));
+    cWeeklyMetrics.forEach(w => out.push({
+      kind: 'weekly-metrics', source: 'weekly_metrics', id: w.id,
+      date: w.weekStart, sortDate: w.weekStart,
+      caId: w.caId, caName: state.cas.find(c => c.id === w.caId)?.name || '—',
+      mrr: num(w.clientMRR), grossRevenue: num(w.clientGrossRevenue),
+      adSpend: num(w.adSpend), leadCost: num(w.leadCost),
+      leadsGenerated: num(w.leadsGenerated),
+      apptsBooked: num(w.apptsBooked),
+      leadsShowed: num(w.leadsShowed),
+      leadsSigned: num(w.leadsSigned),
+      studentsStart: num(w.totalStudentsStart),
+      studentsAcquired: num(w.studentsAcquired),
+      studentsCancelled: num(w.studentsCancelled),
+      surveyScore: null,
+      notes: w.notes || '',
+      flaggedInactive: !!w.flaggedInactive,
+      _payload: w,
+    }));
+    cWeekly.forEach(w => out.push({
+      kind: 'weekly-checkin', source: 'weekly_checkins', id: w.id,
+      date: w.weekStart, sortDate: w.weekStart,
+      caId: w.caId, caName: state.cas.find(c => c.id === w.caId)?.name || '—',
+      mrr: null, grossRevenue: null,
+      adSpend: null, leadCost: null,
+      leadsGenerated: null, apptsBooked: null, leadsShowed: null, leadsSigned: null,
+      studentsStart: null, studentsAcquired: null, studentsCancelled: null,
+      surveyScore: null,
+      notes: [w.concern, w.win, w.accountAction, w.agencyAction].filter(Boolean).join(' · '),
+      flaggedInactive: !!w.flaggedInactive,
+      _payload: w,
+    }));
+    cMonthly.forEach(m => out.push({
+      kind: 'monthly-checkin', source: 'monthly_checkins', id: m.id,
+      date: m.month, sortDate: m.month,
+      caId: m.caId, caName: state.cas.find(c => c.id === m.caId)?.name || '—',
+      mrr: null, grossRevenue: null,
+      adSpend: null, leadCost: null,
+      leadsGenerated: null, apptsBooked: null, leadsShowed: null, leadsSigned: null,
+      studentsStart: null, studentsAcquired: null, studentsCancelled: null,
+      surveyScore: null,
+      notes: [m.concern, m.win, m.accountAction, m.agencyAction].filter(Boolean).join(' · '),
+      flaggedInactive: !!m.flaggedInactive,
+      _payload: m,
+    }));
+    cEvents.forEach(e => out.push({
+      kind: 'event', source: 'growth_events', id: e.id,
+      date: e.date, sortDate: e.date,
+      caId: e.loggedBy || e.caId, caName: state.cas.find(c => c.id === (e.loggedBy || e.caId))?.name || '—',
+      mrr: null, grossRevenue: null,
+      adSpend: null, leadCost: null,
+      leadsGenerated: null, apptsBooked: null, leadsShowed: null, leadsSigned: null,
+      studentsStart: null, studentsAcquired: null, studentsCancelled: null,
+      surveyScore: null,
+      notes: `${e.eventType}${e.notes ? ' · ' + e.notes : ''}${e.saleTotal > 0 ? ' · sale ' + CABT_fmtMoney(e.saleTotal) : ''}`,
+      flaggedInactive: false,
+      _payload: e,
+    }));
+    cSurveys.forEach(s => out.push({
+      kind: 'survey', source: 'surveys', id: s.id,
+      date: s.date, sortDate: s.date,
+      caId: s.caId, caName: state.cas.find(c => c.id === s.caId)?.name || '—',
+      mrr: null, grossRevenue: null,
+      adSpend: null, leadCost: null,
+      leadsGenerated: null, apptsBooked: null, leadsShowed: null, leadsSigned: null,
+      studentsStart: null, studentsAcquired: null, studentsCancelled: null,
+      surveyScore: ((Number(s.overall || 0) + Number(s.responsiveness || 0) + Number(s.followThrough || 0) + Number(s.communication || 0)) / 4) || null,
+      notes: s.comment || '',
+      flaggedInactive: false,
+      _payload: s,
+    }));
+    return out;
+  }, [cMonthlyMetrics, cWeeklyMetrics, cWeekly, cMonthly, cEvents, cSurveys, state.cas]);
+
+  // Period key per cadence (used for grouping)
+  const isoMondayOf = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso + 'T12:00:00');
+    const day = d.getDay() || 7;
+    if (day !== 1) d.setDate(d.getDate() - (day - 1));
+    return d.toISOString().slice(0, 10);
+  };
+  const periodKey = (e) => {
+    const iso = e.date;
+    if (!iso) return '—';
+    if (cadence === 'week')    return isoMondayOf(iso);
+    if (cadence === 'month')   return iso.slice(0, 7) + '-01';
+    if (cadence === 'quarter') {
+      const [y, m] = iso.split('-').map(Number);
+      const q = Math.floor(((m || 1) - 1) / 3);
+      return `${y}-Q${q + 1}`;
+    }
+    if (cadence === 'year')    return iso.slice(0, 4);
+    return e.id; // 'all' — each event is its own group
+  };
+  const periodLabel = (key) => {
+    if (key === '—') return '—';
+    if (cadence === 'week')    return `Week of ${CABT_fmtDate(key)}`;
+    if (cadence === 'month')   return CABT_fmtMonth(key);
+    if (cadence === 'quarter') return key;
+    if (cadence === 'year')    return key;
+    return null; // 'all'
+  };
+
+  // Build rows: in 'all' mode each event = a row; in grouped modes each
+  // group becomes a rollup row with summed/averaged metrics + a count of
+  // each event type, with the underlying events as expandable children.
+  const rows = React.useMemo(() => {
+    if (cadence === 'all') {
+      return events.map(e => ({ ...e, _isGroup: false, _children: [] }));
+    }
+    const groups = new Map();
+    events.forEach(e => {
+      const k = periodKey(e);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(e);
+    });
+    return Array.from(groups.entries()).map(([k, list]) => {
+      const sum = (key) => list.reduce((s, x) => s + (Number(x[key]) || 0), 0);
+      const latest = (key) => {
+        let best = null, bestDate = null;
+        for (const x of list) {
+          if (x[key] == null) continue;
+          if (!bestDate || x.sortDate > bestDate) { best = x[key]; bestDate = x.sortDate; }
+        }
+        return best;
+      };
+      const surveyScores = list.map(x => x.surveyScore).filter(v => v != null);
+      const avgSurvey = surveyScores.length ? surveyScores.reduce((a, b) => a + b, 0) / surveyScores.length : null;
+      const counts = list.reduce((acc, x) => { acc[x.kind] = (acc[x.kind] || 0) + 1; return acc; }, {});
+      const typeSummary = Object.entries(counts).map(([kind, n]) => `${n}× ${kind.replace('-', ' ')}`).join(', ');
+      return {
+        kind: 'rollup',
+        source: 'group',
+        id: k,
+        date: list[0].date, // representative
+        sortDate: k,
+        groupLabel: periodLabel(k),
+        caId: '', caName: list[0].caName,
+        mrr: latest('mrr'),
+        grossRevenue: latest('grossRevenue'),
+        adSpend: sum('adSpend'),
+        leadCost: (sum('leadsGenerated') > 0 ? sum('adSpend') / sum('leadsGenerated') : null),
+        leadsGenerated: sum('leadsGenerated'),
+        apptsBooked:    sum('apptsBooked'),
+        leadsShowed:    sum('leadsShowed'),
+        leadsSigned:    sum('leadsSigned'),
+        studentsStart:  latest('studentsStart'),
+        studentsAcquired: sum('studentsAcquired'),
+        studentsCancelled: sum('studentsCancelled'),
+        surveyScore: avgSurvey,
+        notes: typeSummary,
+        flaggedInactive: list.some(x => x.flaggedInactive),
+        _isGroup: true,
+        _children: list,
+      };
+    });
+  }, [events, cadence]);
+
+  // Sort
+  const sorted = React.useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'string') return av.localeCompare(bv) * dir;
+      return (av - bv) * dir;
+    });
+  }, [rows, sortKey, sortDir]);
+
+  const setSort = (k) => {
+    if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(k); setSortDir(k === 'date' || k === 'sortDate' ? 'desc' : 'desc'); }
+  };
+
+  const fmt   = (n) => (n == null ? '—' : Number(n).toLocaleString());
+  const money = (n) => (n == null ? '—' : '$' + Math.round(Number(n)).toLocaleString());
+  const pctRate = (n) => (n == null ? '—' : (n * 100).toFixed(1) + '%');
+
+  // Column registry for the per-client dashboard
+  const COLUMNS = [
+    { id: 'date',     label: 'Period',    group: 'When',      align: 'left',  sortKey: 'sortDate',
+      render: (r) => <>
+        <span style={{ fontWeight: 700 }}>{r._isGroup ? r.groupLabel : (cadence === 'all' ? CABT_fmtDate(r.date) : (cadence === 'week' ? `Week of ${CABT_fmtDate(r.date)}` : CABT_fmtMonth(r.date)))}</span>
+        {r.flaggedInactive && (
+          <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, letterSpacing: 0.4, padding: '2px 6px', borderRadius: 8, background: 'rgba(255,178,56,0.18)', color: '#8C5A00', textTransform: 'uppercase', border: '1px solid rgba(255,178,56,0.4)' }}>flagged</span>
+        )}
+      </> },
+    { id: 'type',     label: 'Type',      group: 'When',      align: 'left',  sortKey: 'kind',
+      render: (r) => {
+        if (r._isGroup) return <span style={{ fontSize: 11, color: theme.inkMuted }}>{r._children.length} entr{r._children.length === 1 ? 'y' : 'ies'}</span>;
+        const map = {
+          'monthly-metrics': 'Month metrics',
+          'weekly-metrics':  'Week metrics',
+          'weekly-checkin':  'Week check-in',
+          'monthly-checkin': 'Month check-in',
+          'event':           'Growth event',
+          'survey':          'Survey',
+        };
+        return <span style={{ fontSize: 11, color: theme.inkSoft }}>{map[r.kind] || r.kind}</span>;
+      } },
+    { id: 'caName',   label: 'CA',        group: 'When',      align: 'left',  sortKey: 'caName',
+      render: (r) => <span style={{ color: theme.inkSoft }}>{r.caName}</span> },
+    // Money
+    { id: 'mrr',           label: 'MRR',         group: 'Money', align: 'right', sortKey: 'mrr',           mono: true, render: (r) => money(r.mrr) },
+    { id: 'grossRevenue',  label: 'Gross',       group: 'Money', align: 'right', sortKey: 'grossRevenue',  mono: true, render: (r) => money(r.grossRevenue) },
+    { id: 'adSpend',       label: 'Ad Spend',    group: 'Money', align: 'right', sortKey: 'adSpend',       mono: true, render: (r) => money(r.adSpend) },
+    { id: 'leadCost',      label: 'Lead $',      group: 'Money', align: 'right', sortKey: 'leadCost',      mono: true, render: (r) => r.leadCost ? money(r.leadCost) : '—' },
+    // Funnel
+    { id: 'leadsGenerated', label: 'Leads',  group: 'Funnel', align: 'right', sortKey: 'leadsGenerated', mono: true, render: (r) => fmt(r.leadsGenerated) },
+    { id: 'apptsBooked',    label: 'Booked', group: 'Funnel', align: 'right', sortKey: 'apptsBooked',    mono: true, render: (r) => fmt(r.apptsBooked) },
+    { id: 'leadsShowed',    label: 'Showed', group: 'Funnel', align: 'right', sortKey: 'leadsShowed',    mono: true, render: (r) => fmt(r.leadsShowed) },
+    { id: 'leadsSigned',    label: 'Closed', group: 'Funnel', align: 'right', sortKey: 'leadsSigned',    mono: true, render: (r) => fmt(r.leadsSigned) },
+    // Students
+    { id: 'studentsStart',     label: 'Start',     group: 'Students', align: 'right', sortKey: 'studentsStart',     mono: true, render: (r) => fmt(r.studentsStart) },
+    { id: 'studentsAcquired',  label: 'Acquired',  group: 'Students', align: 'right', sortKey: 'studentsAcquired',  mono: true, render: (r) => fmt(r.studentsAcquired) },
+    { id: 'studentsCancelled', label: 'Cancel',    group: 'Students', align: 'right', sortKey: 'studentsCancelled', mono: true, render: (r) => fmt(r.studentsCancelled) },
+    // Survey
+    { id: 'surveyScore', label: 'Survey',     group: 'Other',  align: 'right', sortKey: 'surveyScore', mono: true, render: (r) => r.surveyScore == null ? '—' : (r.surveyScore).toFixed(1) },
+    // Notes (truncated)
+    { id: 'notes',       label: 'Notes',      group: 'Other',  align: 'left',  sortKey: 'notes',
+      render: (r) => {
+        const n = r.notes || '';
+        return <span style={{ color: theme.inkSoft, fontSize: 12 }}>{n.length > 80 ? n.slice(0, 80) + '…' : (n || '—')}</span>;
+      } },
+  ];
+  const COLUMN_GROUPS = ['When', 'Money', 'Funnel', 'Students', 'Other'];
+  const visibleColumnObjs = COLUMNS.filter(c => visibleCols.has(c.id));
+
+  const Th = ({ k, children, align = 'left' }) => {
+    const active = sortKey === k;
+    return (
+      <th onClick={() => setSort(k)} style={{
+        textAlign: align, padding: '10px 8px',
+        fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase',
+        color: active ? theme.ink : theme.inkMuted,
+        cursor: 'pointer', borderBottom: `1px solid ${theme.rule}`,
+        background: theme.bgElev, position: 'sticky', top: 0, zIndex: 1,
+        whiteSpace: 'nowrap', userSelect: 'none',
+      }}>
+        {children}{active && <span style={{ marginLeft: 4, opacity: 0.7 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+      </th>
+    );
+  };
+  const Td = ({ children, align = 'left', mono }) => (
+    <td style={{
+      padding: '10px 8px', fontSize: 12,
+      color: theme.ink,
+      fontFamily: mono ? (theme.mono || 'monospace') : 'inherit',
+      fontVariantNumeric: mono ? 'tabular-nums' : 'normal',
+      textAlign: align, whiteSpace: 'nowrap',
+      borderBottom: `1px solid ${theme.rule}`,
+    }}>{children}</td>
+  );
+
+  // Tap an event row → drill into the right edit form.
+  const drillRoute = {
+    'monthly-metrics': 'log-metrics',
+    'weekly-metrics':  'log-metrics',
+    'event':           'log-event',
+    'survey':          'log-survey',
+  };
+  const onEventClick = (r) => {
+    if (r._isGroup) {
+      setExpanded(prev => {
+        const next = new Set(prev);
+        if (next.has(r.id)) next.delete(r.id); else next.add(r.id);
+        return next;
+      });
+      return;
+    }
+    const route = drillRoute[r.kind];
+    if (!route) return; // check-ins are read-only
+    navigate(route, { clientId: client.id, editingId: r.id });
+  };
+
+  return (
+    <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Cadence toggle + column chooser */}
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <span style={{ fontSize: 12, color: theme.inkMuted, fontWeight: 600 }}>Cadence</span>
+        {[
+          { v: 'week',    label: 'Week' },
+          { v: 'month',   label: 'Month' },
+          { v: 'quarter', label: 'Quarter' },
+          { v: 'year',    label: 'Year' },
+          { v: 'all',     label: 'All' },
+        ].map(t => (
+          <button key={t.v} onClick={() => setCadence(t.v)} style={{
+            padding: '6px 12px', fontSize: 12, fontWeight: 700,
+            background: cadence === t.v ? theme.ink : theme.surface,
+            color: cadence === t.v ? (theme.accentInk || '#fff') : theme.ink,
+            border: `1px solid ${cadence === t.v ? theme.ink : theme.rule}`,
+            borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+          }}>{t.label}</button>
+        ))}
+
+        <button
+          onClick={() => setChooserOpen(true)}
+          aria-label="Choose columns"
+          style={{
+            marginLeft: 'auto',
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 12px', height: 32,
+            background: theme.surface, color: theme.ink,
+            border: `1px solid ${theme.rule}`, borderRadius: 8,
+            fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+          }}
+        >
+          <Icon name="cog" size={14} color={theme.inkMuted}/>
+          Columns
+          <span style={{ color: theme.inkMuted, fontWeight: 500, marginLeft: 2 }}>· {visibleCols.size}</span>
+        </button>
+      </div>
+
+      <div style={{ fontSize: 11, color: theme.inkMuted }}>
+        {events.length} log{events.length === 1 ? '' : 's'} for {client.name}{cadence !== 'all' && ` · ${sorted.length} ${cadence}${sorted.length === 1 ? '' : 's'}`} · click any column to sort{cadence !== 'all' && ' · tap a row to expand'}
+      </div>
+
+      <div style={{ overflowX: 'auto', background: theme.surface, border: `1px solid ${theme.rule}`, borderRadius: theme.radius }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              {cadence !== 'all' && <th style={{ width: 28, padding: '10px 4px', borderBottom: `1px solid ${theme.rule}`, background: theme.bgElev, position: 'sticky', top: 0, zIndex: 1 }}/>}
+              {visibleColumnObjs.map(col => (
+                <Th key={col.id} k={col.sortKey || col.id} align={col.align}>{col.label}</Th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.length === 0 && (
+              <tr><td colSpan={visibleColumnObjs.length + (cadence !== 'all' ? 1 : 0)} style={{ padding: 24, textAlign: 'center', color: theme.inkMuted, fontSize: 13 }}>No logs yet for this client.</td></tr>
+            )}
+            {sorted.map(r => {
+              const isExpanded = expanded.has(r.id);
+              return (
+                <React.Fragment key={r.id}>
+                  <tr onClick={() => onEventClick(r)} style={{ cursor: 'pointer' }}>
+                    {cadence !== 'all' && (
+                      <td style={{ padding: '10px 4px', borderBottom: `1px solid ${theme.rule}`, color: theme.inkMuted, fontSize: 14, textAlign: 'center' }}>
+                        {r._isGroup && r._children.length > 0 ? (isExpanded ? '▾' : '▸') : ''}
+                      </td>
+                    )}
+                    {visibleColumnObjs.map(col => (
+                      <Td key={col.id} align={col.align} mono={col.mono}>{col.render(r)}</Td>
+                    ))}
+                  </tr>
+                  {r._isGroup && isExpanded && r._children.map(child => (
+                    <tr key={child.id}
+                        onClick={() => {
+                          const route = drillRoute[child.kind];
+                          if (route) navigate(route, { clientId: client.id, editingId: child.id });
+                        }}
+                        style={{ cursor: drillRoute[child.kind] ? 'pointer' : 'default', background: theme.bgElev }}>
+                      <td style={{ padding: '8px 4px', borderBottom: `1px solid ${theme.rule}` }}/>
+                      {visibleColumnObjs.map(col => (
+                        <td key={col.id} style={{
+                          padding: '8px 8px', fontSize: 11,
+                          color: theme.inkSoft,
+                          fontFamily: col.mono ? (theme.mono || 'monospace') : 'inherit',
+                          fontVariantNumeric: col.mono ? 'tabular-nums' : 'normal',
+                          textAlign: col.align, whiteSpace: 'nowrap',
+                          borderBottom: `1px solid ${theme.rule}`,
+                          paddingLeft: col.id === 'date' ? 24 : 8,
+                        }}>{col.render({ ...child, _isGroup: false })}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {chooserOpen && window.ColumnChooserModal && (
+        <window.ColumnChooserModal
+          theme={theme}
+          columns={COLUMNS}
+          groups={COLUMN_GROUPS}
+          visible={visibleCols}
+          onChange={setVisibleCols}
+          onClose={() => setChooserOpen(false)}
+          defaults={DEFAULT_VISIBLE}
+        />
+      )}
+    </div>
+  );
+}
+
+Object.assign(window, { ClientDetail, KV, Stat, EmptyState, ClientDashboardTab });

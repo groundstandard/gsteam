@@ -2961,5 +2961,8 @@ function ColumnChooserModal({ theme, columns, groups, visible, onChange, onClose
 
 Object.assign(window, {
   AdminAnnualBonus, AdminRevenueLedger, AdminClientRollup, AdminClientCalc, AdminOpenQuestions, AdminAuditLog, AdminMore,
-  AdminAddClient, AdminPendingClients, AdminFormulaInspector, AdminBulkCadence, AdminDashboard, CABT_nextClientId: nextClientId,
+  AdminAddClient, AdminPendingClients, AdminFormulaInspector, AdminBulkCadence, AdminDashboard,
+  // Reusable bits exposed for ca-detail.jsx (per-client Dashboard tab — TKT-12.4)
+  ColumnChooserModal, Sparkline,
+  CABT_nextClientId: nextClientId,
 });
