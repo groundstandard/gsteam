@@ -2299,7 +2299,18 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
   const lsSet = (k, v) => {
     try { window.localStorage && window.localStorage.setItem(k, JSON.stringify(v)); } catch (_e) {}
   };
-  const [tierFilter, setTierFilter] = React.useState(() => lsGet('dash:tiers', ['standard', 'vip']));
+  // Bobby 2026-05-07 ("these filters arent working"): the À la carte chip
+  // was storing 'a la carte' (spaces) but the DB enum is 'a_la_carte'
+  // (underscore), so À la carte clients never matched the filter. Fix is
+  // below at the chip definition; here we also migrate any persisted bad
+  // value so users locked into ['standard','vip','reach','a la carte']
+  // pick up the correct value on next mount.
+  const [tierFilter, setTierFilter] = React.useState(() => {
+    const raw = lsGet('dash:tiers', ['standard', 'vip']);
+    return Array.isArray(raw)
+      ? raw.map(v => v === 'a la carte' ? 'a_la_carte' : v)
+      : ['standard', 'vip'];
+  });
   React.useEffect(() => { lsSet('dash:tiers', tierFilter); }, [tierFilter]);
   const [caFilter, setCaFilter] = React.useState(() => lsGet('dash:caFilter', 'all'));
   React.useEffect(() => { lsSet('dash:caFilter', caFilter); }, [caFilter]);
@@ -2851,7 +2862,7 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
             { v: 'standard',   label: 'Standard'   },
             { v: 'vip',        label: 'VIP'        },
             { v: 'reach',      label: 'Reach'      },
-            { v: 'a la carte', label: 'À la carte' },
+            { v: 'a_la_carte', label: 'À la carte' },
           ].map(t => {
             const checked = tierFilter.includes(t.v);
             return (
