@@ -91,13 +91,31 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
 
   const lastForInit = getLastForClient(initialClient, initialCadence);
 
-  // Bobby 2026-05-04: "Client MRR" and "Client gross revenue" were the same
-  // thing in his head ("Total money collected, recurring or not"). Form now
-  // exposes ONE field — totalRevenue — that writes to BOTH columns on submit
-  // so scoring (which still references both internally) keeps working.
+  // Bobby 2026-05-07: MRR is now a CALCULATED field — trailing-3-period
+  // average of gross revenue. The CA only enters Gross Revenue; the form
+  // computes clientMRR on submit and stores both. Backward compat: old
+  // rows where clientMRR was hand-entered still read fine because the
+  // column is unchanged. (Pre-2026-05-07 behavior was: MRR == Gross from
+  // the same input field.)
   const initialRevenue = editing
     ? (editing.clientGrossRevenue || editing.clientMRR || '')
     : (lastForInit?.clientGrossRevenue || lastForInit?.clientMRR || '');
+
+  // Trailing-3-period average of gross revenue for this client + cadence.
+  // Lenient: if fewer than 3 entries exist, averages whatever's available.
+  // `thisRow` is the current form's pending value, included in the average.
+  // `excludeId` skips the row currently being edited (avoid double-count).
+  const computeRollingMRR = (clientId, period, cadence, thisGross, excludeId) => {
+    const tbl = cadence === 'weekly' ? (state.weeklyMetrics || []) : (state.monthlyMetrics || []);
+    const periodKey = cadence === 'weekly' ? 'weekStart' : 'month';
+    const priors = tbl
+      .filter(m => m.clientId === clientId && m.id !== excludeId && m[periodKey] && m[periodKey] < period)
+      .sort((a, b) => (b[periodKey] || '').localeCompare(a[periodKey] || ''))
+      .slice(0, 2)
+      .map(m => Number(m.clientGrossRevenue || m.clientMRR || 0));
+    const all = [Number(thisGross) || 0, ...priors];
+    return all.reduce((s, n) => s + n, 0) / all.length;
+  };
 
   const [form, setForm] = React.useState(editing
     ? { ...editing, totalRevenue: initialRevenue, stillActive: !editing.flaggedInactive }
@@ -217,17 +235,21 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
     const periodFields = isWeekly
       ? { weekStart: form.weekStart }
       : { month: CABT_firstOfMonth(form.month) };
-    // Single revenue value writes to BOTH client_mrr AND client_gross_revenue
-    // so backend scoring (pot share uses MRR; ad-spend efficiency uses gross)
-    // stays consistent without two confusing fields in the UI. Bobby 2026-05-04.
-    const revenue = num(form.totalRevenue);
+    // Bobby 2026-05-07: clientGrossRevenue = the CA's input (this period's
+    // gross). clientMRR is now COMPUTED — trailing-3-period average of gross
+    // revenue across this client's prior entries plus this one. Reads are
+    // unchanged (every consumer of clientMRR still works), so formulas don't
+    // break — they just see a smoothed value going forward.
+    const grossRevenue = num(form.totalRevenue);
+    const periodForCalc = isWeekly ? form.weekStart : CABT_firstOfMonth(form.month);
+    const computedMRR = computeRollingMRR(form.clientId, periodForCalc, activeCadence, grossRevenue, editingId);
     const row = {
       id: editingId || `${idPrefix}-${Date.now()}`,
       caId: ca.id,
       clientId: form.clientId,
       ...periodFields,
-      clientMRR: revenue,
-      clientGrossRevenue: revenue,
+      clientMRR: computedMRR,
+      clientGrossRevenue: grossRevenue,
       leadCost: num(form.leadCost),
       adSpend: num(form.adSpend),
       leadsGenerated: num(form.leadsGenerated),
@@ -338,12 +360,40 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
       </SectionCard>
 
       <SectionCard {...sectionProps('money')} title="Revenue & spend"
-        doneLabel={sectionDone.money ? `Rev ${CABT_fmtMoney(form.totalRevenue)} · Ad ${CABT_fmtMoney(form.adSpend)}` : 'Tap to fill'}>
-        <Field label={activeCadence === 'weekly' ? 'Total revenue this week' : 'Total monthly revenue'}
-               hint="Total money collected this period — recurring + one-time + add-ons. Drives both bonus-pot share and ad-spend efficiency."
+        doneLabel={sectionDone.money ? `Gross ${CABT_fmtMoney(form.totalRevenue)} · Ad ${CABT_fmtMoney(form.adSpend)}` : 'Tap to fill'}>
+        <Field label={activeCadence === 'weekly' ? 'Gross revenue this week' : 'Gross revenue this month'}
+               hint="Total money collected this period — recurring + one-time + add-ons. MRR is auto-computed below as the trailing-3 average."
                required error={errors.totalRevenue} theme={theme}>
           <Input type="number" inputmode="decimal" prefix="$" value={form.totalRevenue} onChange={(v) => updateForm('totalRevenue', v)} theme={theme} />
         </Field>
+        {/* TKT — Bobby 2026-05-07. Live preview of the computed MRR so the CA
+            can see where the trailing-3 average lands as they type. Only
+            renders once a gross value is entered. */}
+        {form.totalRevenue !== '' && form.totalRevenue != null && (() => {
+          const periodForPreview = activeCadence === 'weekly'
+            ? form.weekStart
+            : (form.month ? CABT_firstOfMonth(form.month) : '');
+          if (!form.clientId || !periodForPreview) return null;
+          const previewMRR = computeRollingMRR(
+            form.clientId, periodForPreview, activeCadence,
+            Number(form.totalRevenue) || 0,
+            editingId
+          );
+          return (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '6px 10px', marginTop: -4,
+              borderRadius: 999,
+              background: theme.bgSoft || 'rgba(255,255,255,0.04)',
+              border: `1px solid ${theme.rule}`,
+              fontSize: 11,
+            }}>
+              <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.5, color: theme.inkMuted, textTransform: 'uppercase' }}>MRR (auto)</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: theme.ink, fontVariantNumeric: 'tabular-nums' }}>{CABT_fmtMoney(previewMRR)}</span>
+              <span style={{ fontSize: 10, color: theme.inkMuted }}>· trailing-3 avg of gross</span>
+            </div>
+          );
+        })()}
         <Field label="Lead cost" theme={theme}>
           <Input type="number" inputmode="decimal" prefix="$" value={form.leadCost} onChange={(v) => updateForm('leadCost', v)} theme={theme} />
         </Field>

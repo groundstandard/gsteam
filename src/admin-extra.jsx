@@ -334,9 +334,17 @@ function AdminRevenueLedger({ state, theme }) {
   if (filter === 'membership') clients = clients.filter(c => c.hasMembershipAddon);
   if (filter === 'core')       clients = clients.filter(c => !c.hasMembershipAddon);
 
+  // Bobby 2026-05-07: MRR is now a smoothed trailing-3-month average — using
+  // clientMRR here would understate actual booked revenue ($30k gross month
+  // would render as the smoothed value, not the booked amount). Revenue
+  // Ledger summarises actual revenue collected, so we read gross directly
+  // and only fall back to clientMRR for legacy rows where they were equal.
   const cellFor = (clientId, month) => {
     const m = state.monthlyMetrics.find(mm => mm.clientId === clientId && mm.month === month);
-    return m ? m.clientMRR : null;
+    if (!m) return null;
+    return m.clientGrossRevenue != null && m.clientGrossRevenue !== ''
+      ? m.clientGrossRevenue
+      : m.clientMRR;
   };
 
   // Totals
