@@ -2210,17 +2210,29 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
   const [caFilter, setCaFilter] = React.useState(() => lsGet('dash:caFilter', 'all'));
   React.useEffect(() => { lsSet('dash:caFilter', caFilter); }, [caFilter]);
   // Visible-column set (managed by the gear-icon ColumnChooser modal).
-  // Default visible columns — verbatim from Bobby's PRD addendum spec:
-  // "Code · Client · Tier · CA · Status · Sign date · Months on book · MRR ·
-  //  Last metric · Composite · Performance · Retention · Growth"
+  // Default visible columns — Bobby 2026-05-07 Slack feedback on the
+  // TKT-12.3 PRD-strict 13-col default: "the dashboard metrics should have
+  // all columns — i like these but the ones that used to be there are
+  // missing now too". Union of pre-TKT-12.3 dashboard cols (Code · Client ·
+  // CA · Tier · Composite · MRR · Revenue · Ad Spend · Lead $ · Leads ·
+  // Booked · Showed · Signed · Cancel · Months) + PRD-12.3 additions
+  // (Status · Sign date · Months on book · Last metric · Performance ·
+  // Retention · Growth) = 22 columns visible by default. Anything else is
+  // still available via the column chooser.
+  // localStorage key bumped to `dash:cols:v2` so existing 13-col users pick
+  // up the new defaults instead of staying frozen on the prior set.
   const DEFAULT_VISIBLE_COLS = [
     'code', 'name', 'tier', 'caName', 'status', 'signDate', 'monthsOnBook',
-    'mrr', 'lastMetric', 'composite', 'performanceScore', 'retentionScore', 'growthScore',
+    'mrr', 'revenue', 'adSpend', 'leadCost',
+    'leadsGenerated', 'apptsBooked', 'leadsShowed', 'leadsSigned',
+    'studentsCancelled',
+    'composite', 'performanceScore', 'retentionScore', 'growthScore',
+    'lastMetric', 'monthsCoverage',
   ];
   const [visibleCols, setVisibleCols] = React.useState(() =>
-    new Set(lsGet('dash:cols', DEFAULT_VISIBLE_COLS))
+    new Set(lsGet('dash:cols:v2', DEFAULT_VISIBLE_COLS))
   );
-  React.useEffect(() => { lsSet('dash:cols', Array.from(visibleCols)); }, [visibleCols]);
+  React.useEffect(() => { lsSet('dash:cols:v2', Array.from(visibleCols)); }, [visibleCols]);
   const [chooserOpen, setChooserOpen] = React.useState(false);
 
   // Reset page index whenever the visible result-set might shrink.
