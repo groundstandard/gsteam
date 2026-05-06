@@ -289,6 +289,28 @@ const CABT_api = {
     if (error) throw error;
     return { id };
   },
+  // Phase 12 TKT-12.1 — non-admin edits to already-submitted rows route here
+  // instead of touching the row directly. Admin reviews via Edit Approvals
+  // queue; on approve, fn_apply_edit_request applies the diff server-side.
+  async submitEditRequest({ tableName, rowId, fieldChanges, reason }) {
+    if (CABT_getApiMode() !== 'supabase') {
+      return { id: 'ER-' + Date.now(), tableName, rowId, fieldChanges, reason, status: 'pending' };
+    }
+    const sb = await CABT_sb();
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user?.id) throw new Error('not_signed_in');
+    const payload = {
+      table_name: tableName,
+      row_id: String(rowId),
+      field_changes: fieldChanges,
+      reason: reason || null,
+      requested_by: user.id,
+      status: 'pending',
+    };
+    const { data, error } = await sb.from('edit_requests').insert(payload).select().single();
+    if (error) throw error;
+    return toUI(data);
+  },
   async approve(id) {
     const mode = CABT_getApiMode();
     if (mode === 'local')    return { id };

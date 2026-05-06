@@ -45,7 +45,7 @@ function SectionCard({ id, title, doneLabel, children, theme, isOpen, done, onTo
 //   - shows a `month` picker when monthly
 // Numeric fields are identical either way; the backend rolls weekly entries
 // up to monthly via v_monthly_metrics_effective for scoring.
-function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, editingId }) {
+function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, editingId, isAdmin }) {
   const myClients = state.clients.filter(c => c.assignedCA === ca.id && !c.cancelDate);
 
   // Editing: try weekly first (since IDs are prefixed differently); fall back
@@ -278,9 +278,22 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
   const cadenceHint = activeCadence === 'weekly'
     ? 'This client is on weekly cadence — your numbers roll up into the month for scoring.'
     : 'Prefilled from last month where possible. Tap a section to edit.';
+  // TKT-12.1 — when editing as a non-admin, this submission becomes an
+  // edit request, not a direct write. Surface that clearly.
+  const requestMode = !!editing && !isAdmin;
 
   return (
     <FormShell theme={theme} gap={12}>
+      {requestMode && (
+        <div style={{
+          fontSize: 13, lineHeight: 1.45, color: theme.ink,
+          padding: '10px 12px', borderRadius: 8,
+          background: 'rgba(255, 178, 56, 0.12)',
+          border: '1px solid rgba(255, 178, 56, 0.35)',
+        }}>
+          <strong>Request edit.</strong> Your existing entry stays in place until an admin reviews this request.
+        </div>
+      )}
       <div style={{ fontSize: 13, color: theme.inkSoft, padding: '0 4px' }}>
         {cadenceHint}
       </div>
@@ -378,7 +391,9 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
       <StickyBar theme={theme}>
         <Button theme={theme} variant="secondary" onClick={() => navigate('back')}>Cancel</Button>
         <Button theme={theme} variant="primary" fullWidth onClick={handleSubmit}>
-          {editing ? 'Save changes' : (activeCadence === 'weekly' ? 'Save weekly metrics' : 'Save monthly metrics')}
+          {editing
+            ? (requestMode ? 'Submit edit request' : 'Save changes')
+            : (activeCadence === 'weekly' ? 'Save weekly metrics' : 'Save monthly metrics')}
         </Button>
       </StickyBar>
     </FormShell>
@@ -418,7 +433,7 @@ function FormShell({ theme, children, gap = 14 }) {
 }
 
 // ── Log Growth Event ───────────────────────────────────────────────────────
-function LogEventForm({ state, ca, theme, presetClientId, navigate, onSubmit, editingId }) {
+function LogEventForm({ state, ca, theme, presetClientId, navigate, onSubmit, editingId, isAdmin }) {
   const myClients = state.clients.filter(c => c.assignedCA === ca.id && !c.cancelDate);
   const editing = editingId ? (state.growthEvents || []).find(e => e.id === editingId) : null;
   const [form, setForm] = React.useState(editing ? {
@@ -462,8 +477,19 @@ function LogEventForm({ state, ca, theme, presetClientId, navigate, onSubmit, ed
       loggedBy: ca.id,
     }, !!editing);
   };
+  const requestMode = !!editing && !isAdmin;
   return (
     <FormShell theme={theme}>
+      {requestMode && (
+        <div style={{
+          fontSize: 13, lineHeight: 1.45, color: theme.ink,
+          padding: '10px 12px', borderRadius: 8, marginBottom: 4,
+          background: 'rgba(255, 178, 56, 0.12)',
+          border: '1px solid rgba(255, 178, 56, 0.35)',
+        }}>
+          <strong>Request edit.</strong> Your existing entry stays in place until an admin reviews this request.
+        </div>
+      )}
       <Field label="Event date" required error={errors.date} theme={theme}>
         <Input type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} theme={theme}/>
       </Field>
@@ -489,14 +515,16 @@ function LogEventForm({ state, ca, theme, presetClientId, navigate, onSubmit, ed
       </Field>
       <StickyBar theme={theme}>
         <Button theme={theme} variant="secondary" onClick={() => navigate('back')}>Cancel</Button>
-        <Button theme={theme} variant="primary" fullWidth onClick={submit}>{editing ? 'Save changes' : 'Save event'}</Button>
+        <Button theme={theme} variant="primary" fullWidth onClick={submit}>
+          {editing ? (requestMode ? 'Submit edit request' : 'Save changes') : 'Save event'}
+        </Button>
       </StickyBar>
     </FormShell>
   );
 }
 
 // ── Log Survey Response ────────────────────────────────────────────────────
-function LogSurveyForm({ state, ca, theme, presetClientId, navigate, onSubmit, editingId }) {
+function LogSurveyForm({ state, ca, theme, presetClientId, navigate, onSubmit, editingId, isAdmin }) {
   const myClients = state.clients.filter(c => c.assignedCA === ca.id && !c.cancelDate);
   const editing = editingId ? (state.surveys || []).find(s => s.id === editingId) : null;
   const [form, setForm] = React.useState(editing ? {
@@ -533,8 +561,19 @@ function LogSurveyForm({ state, ca, theme, presetClientId, navigate, onSubmit, e
     if (!validate()) return;
     onSubmit({ id: editingId || `SR-${Date.now()}`, ...form, submittedBy: ca.id }, !!editing);
   };
+  const requestMode = !!editing && !isAdmin;
   return (
     <FormShell theme={theme}>
+      {requestMode && (
+        <div style={{
+          fontSize: 13, lineHeight: 1.45, color: theme.ink,
+          padding: '10px 12px', borderRadius: 8, marginBottom: 4,
+          background: 'rgba(255, 178, 56, 0.12)',
+          border: '1px solid rgba(255, 178, 56, 0.35)',
+        }}>
+          <strong>Request edit.</strong> Your existing entry stays in place until an admin reviews this request.
+        </div>
+      )}
       <Field label="Date" required theme={theme}>
         <Input type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} theme={theme}/>
       </Field>
@@ -567,7 +606,9 @@ function LogSurveyForm({ state, ca, theme, presetClientId, navigate, onSubmit, e
       </Field>
       <StickyBar theme={theme}>
         <Button theme={theme} variant="secondary" onClick={() => navigate('back')}>Cancel</Button>
-        <Button theme={theme} variant="primary" fullWidth onClick={submit}>{editing ? 'Save changes' : 'Save survey'}</Button>
+        <Button theme={theme} variant="primary" fullWidth onClick={submit}>
+          {editing ? (requestMode ? 'Submit edit request' : 'Save changes') : 'Save survey'}
+        </Button>
       </StickyBar>
     </FormShell>
   );

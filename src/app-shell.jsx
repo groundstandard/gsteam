@@ -258,13 +258,62 @@ function App() {
   };
 
   // Action handlers
-  // Phase 11 — cadence is passed from LogMetricsForm. Weekly rows go to
-  // weeklyMetrics state + weekly_metrics table; monthly stay where they were.
-  // Backend rolls weekly entries up into monthly via v_monthly_metrics_effective
-  // for scoring, so the same form covers both paths transparently.
+  //
+  // Phase 12 TKT-12.1 (Bobby 2026-05-06) — non-admin edits to existing rows
+  // route through the Edit Requests queue instead of touching the row
+  // directly. Admins / owners keep direct-edit. New rows always insert
+  // directly regardless of role.
+  const isAdminAuth = ['owner', 'admin'].includes(authedProfile?.role);
+  const computeFieldDiff = (original, next) => {
+    if (!original) return {};
+    const changed = {};
+    Object.keys(next).forEach((k) => {
+      // Skip identity / metadata keys — never propose those as edits.
+      if (['id', 'caId', 'clientId', 'createdAt', 'createdBy', 'updatedAt', 'cadence'].includes(k)) return;
+      const a = original[k];
+      const b = next[k];
+      if (a === b) return;
+      // Tolerate "" vs 0 vs null for numeric fields that came back from DB as 0
+      if ((a == null || a === '') && (b == null || b === '')) return;
+      if (typeof a === 'number' && typeof b === 'string' && Number(b) === a) return;
+      if (typeof b === 'number' && typeof a === 'string' && Number(a) === b) return;
+      changed[k] = { old: a == null ? null : a, new: b == null ? null : b };
+    });
+    return changed;
+  };
+  const requestEdit = async (tableName, row, originalRow) => {
+    const changes = computeFieldDiff(originalRow, row);
+    if (Object.keys(changes).length === 0) {
+      showToast('No changes detected');
+      navigate('back');
+      return;
+    }
+    try {
+      await CABT_api.submitEditRequest({
+        tableName,
+        rowId: row.id,
+        fieldChanges: changes,
+        reason: row._editReason || null,
+      });
+      showToast('Edit requested · admin will review');
+    } catch (e) {
+      showToast('Edit request failed');
+      console.error('[requestEdit]', e);
+    }
+    navigate('back');
+  };
+
   const submitMetrics = async (row, isEdit, cadence = 'monthly') => {
     const isWeekly = cadence === 'weekly';
     const stateKey = isWeekly ? 'weeklyMetrics' : 'monthlyMetrics';
+    const tableName = isWeekly ? 'weekly_metrics' : 'monthly_metrics';
+
+    // Non-admin edit → route to edit-request queue, leave the row untouched.
+    if (isEdit && !isAdminAuth && CABT_getApiMode() === 'supabase') {
+      const original = (state[stateKey] || []).find(m => m.id === row.id);
+      return requestEdit(tableName, row, original);
+    }
+
     const mutator = (s) => ({
       ...s,
       [stateKey]: isEdit
@@ -273,7 +322,6 @@ function App() {
     });
     const msg = isWeekly ? 'Weekly metrics saved' : 'Monthly metrics saved';
     if (CABT_getApiMode() === 'supabase') {
-      // Optimistic + persist (realtime will reconcile if anything changes)
       setState(mutator);
       try {
         if (isWeekly) {
@@ -294,6 +342,10 @@ function App() {
     }
   };
   const submitEvent = async (row, isEdit) => {
+    if (isEdit && !isAdminAuth && CABT_getApiMode() === 'supabase') {
+      const original = (state.growthEvents || []).find(e => e.id === row.id);
+      return requestEdit('growth_events', row, original);
+    }
     const mutator = (s) => ({
       ...s,
       growthEvents: isEdit
@@ -329,6 +381,10 @@ function App() {
     }
   };
   const submitSurvey = async (row, isEdit) => {
+    if (isEdit && !isAdminAuth && CABT_getApiMode() === 'supabase') {
+      const original = (state.surveys || []).find(v => v.id === row.id);
+      return requestEdit('surveys', row, original);
+    }
     const mutator = (s) => ({
       ...s,
       surveys: isEdit
@@ -491,9 +547,9 @@ function App() {
         case 'book': return <CABook state={state} ca={ca} theme={theme} navigate={navigate} initialFilter={route.params.filter}/>;
         case 'dashboard': return <AdminDashboard state={state} theme={theme} navigate={navigate} scopeCa={ca?.id}/>;
         case 'client-detail': return <ClientDetail state={state} ca={ca} theme={theme} clientId={route.params.clientId} navigate={navigate}/>;
-        case 'log-metrics': return <LogMetricsForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitMetrics}/>;
-        case 'log-event': return <LogEventForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitEvent}/>;
-        case 'log-survey': return <LogSurveyForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitSurvey}/>;
+        case 'log-metrics': return <LogMetricsForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitMetrics} isAdmin={isAdminAuth}/>;
+        case 'log-event': return <LogEventForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitEvent} isAdmin={isAdminAuth}/>;
+        case 'log-survey': return <LogSurveyForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitSurvey} isAdmin={isAdminAuth}/>;
         case 'log-checkin': return <LogCheckinForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} navigate={navigate} onSubmit={submitCheckin}/>;
         case 'scorecard': return <CAScorecard state={state} ca={ca} theme={theme} viz={t.scorecardViz}/>;
         case 'profile': return <CAProfile state={state} ca={ca} theme={theme} navigate={navigate} profile={authedProfile} onSignOut={signOutHandler}/>;

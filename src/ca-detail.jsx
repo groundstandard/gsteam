@@ -22,6 +22,12 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
   const cWeeklyMetrics = (state.weeklyMetrics || [])
     .filter(w => w.clientId === client.id)
     .map(w => ({ ...w, _kind: 'weekly', _periodKey: w.weekStart }));
+
+  // TKT-12.1 — flag rows that already have a pending edit_request so the
+  // card can show an "Edit pending" pill (and tapping warns the user).
+  const pendingEdits = (state.editRequests || []).filter(r => r.status === 'pending');
+  const hasPendingEdit = (table, rowId) =>
+    pendingEdits.some(r => r.tableName === table && String(r.rowId) === String(rowId));
   const cMetrics = [...cMonthlyMetrics, ...cWeeklyMetrics]
     .sort((a, b) => (b._periodKey || '').localeCompare(a._periodKey || ''));
   const cEvents = state.growthEvents.filter(e => e.clientId === client.id).sort((a,b) => b.date.localeCompare(a.date));
@@ -361,6 +367,7 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
           {cMetrics.map(m => {
             const isWeekly = m._kind === 'weekly';
             const periodLabel = isWeekly ? `Week of ${CABT_fmtDate(m.weekStart)}` : CABT_fmtMonth(m.month);
+            const editPending = hasPendingEdit(isWeekly ? 'weekly_metrics' : 'monthly_metrics', m.id);
             return (
               <Card theme={theme} key={m.id} padding={14}
                     onClick={() => navigate('log-metrics', { clientId, editingId: m.id })}
@@ -368,7 +375,7 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
                     role="button"
                     aria-label={`Edit ${periodLabel}`}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                     <div style={{ fontSize: 15, fontWeight: 700, color: theme.ink, fontFamily: theme.serif, letterSpacing: -0.2 }}>{periodLabel}</div>
                     {isWeekly && (
                       <span style={{
@@ -377,6 +384,15 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
                         background: theme.bgSoft || 'rgba(255,255,255,0.05)',
                         color: theme.inkMuted, textTransform: 'uppercase',
                       }}>weekly</span>
+                    )}
+                    {editPending && (
+                      <span style={{
+                        fontSize: 9, fontWeight: 800, letterSpacing: 0.5,
+                        padding: '2px 6px', borderRadius: 8,
+                        background: 'rgba(255, 178, 56, 0.18)',
+                        color: '#8C5A00', textTransform: 'uppercase',
+                        border: '1px solid rgba(255, 178, 56, 0.4)',
+                      }}>edit pending</span>
                     )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -410,14 +426,27 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
           <Button theme={theme} icon="plus" fullWidth size="md"
                   onClick={() => navigate('log-event', { clientId })}>Log an event</Button>
           {cEvents.length === 0 && <EmptyState theme={theme} text="No growth events yet." />}
-          {cEvents.map(e => (
+          {cEvents.map(e => {
+            const editPending = hasPendingEdit('growth_events', e.id);
+            return (
             <Card theme={theme} key={e.id} padding={14}
                   onClick={() => navigate('log-event', { clientId, editingId: e.id })}
                   style={{ cursor: 'pointer' }}
                   role="button"
                   aria-label={`Edit ${e.eventType}`}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: theme.ink }}>{e.eventType}</span>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: theme.ink }}>{e.eventType}</span>
+                  {editPending && (
+                    <span style={{
+                      fontSize: 9, fontWeight: 800, letterSpacing: 0.5,
+                      padding: '2px 6px', borderRadius: 8,
+                      background: 'rgba(255, 178, 56, 0.18)',
+                      color: '#8C5A00', textTransform: 'uppercase',
+                      border: '1px solid rgba(255, 178, 56, 0.4)',
+                    }}>edit pending</span>
+                  )}
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 12, color: theme.inkMuted }}>{CABT_fmtDate(e.date)}</span>
                   <Icon name="edit" size={14} color={theme.inkMuted} />
@@ -430,7 +459,8 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
                 </div>
               )}
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -441,6 +471,7 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
           {cSurveys.length === 0 && <EmptyState theme={theme} text="No surveys yet." />}
           {cSurveys.map(s => {
             const avg = (s.overall + s.responsiveness + s.followThrough + s.communication) / 4;
+            const editPending = hasPendingEdit('surveys', s.id);
             return (
               <Card theme={theme} key={s.id} padding={14}
                     onClick={() => navigate('log-survey', { clientId, editingId: s.id })}
@@ -448,10 +479,21 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
                     role="button"
                     aria-label="Edit survey">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <div style={{ display: 'flex', gap: 2 }}>
-                    {[1,2,3,4,5].map(n => (
-                      <Icon key={n} name={n <= Math.round(avg) ? 'star-fill' : 'star'} size={14} color={theme.gold} />
-                    ))}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 2 }}>
+                      {[1,2,3,4,5].map(n => (
+                        <Icon key={n} name={n <= Math.round(avg) ? 'star-fill' : 'star'} size={14} color={theme.gold} />
+                      ))}
+                    </div>
+                    {editPending && (
+                      <span style={{
+                        fontSize: 9, fontWeight: 800, letterSpacing: 0.5,
+                        padding: '2px 6px', borderRadius: 8,
+                        background: 'rgba(255, 178, 56, 0.18)',
+                        color: '#8C5A00', textTransform: 'uppercase',
+                        border: '1px solid rgba(255, 178, 56, 0.4)',
+                      }}>edit pending</span>
+                    )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 12, color: theme.inkMuted }}>{CABT_fmtDate(s.date)}{s.anonymous && ' · anon'}</span>

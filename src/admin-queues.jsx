@@ -101,16 +101,21 @@ function EditReqCard({ req, theme, onApprove, onReject, busy }) {
 
       <div style={{ background: theme.bg, borderRadius: 8, padding: 10, marginBottom: 10 }}>
         {fields.map(f => {
-          const change = req.fieldChanges[f];
+          const change = req.fieldChanges[f] || {};
+          // Accept both shapes — live trigger writes {old, new}; legacy seed
+          // and earlier client code used {from, to}. Phase 12 standardizes
+          // on {old, new} but this stays tolerant.
+          const before = change.old !== undefined ? change.old : change.from;
+          const after  = change.new !== undefined ? change.new : change.to;
           return (
             <div key={f} style={{ display: 'flex', gap: 10, fontSize: 12, padding: '4px 0', alignItems: 'baseline' }}>
-              <div style={{ width: 110, color: theme.inkMuted, fontFamily: theme.mono, fontSize: 11 }}>{f}</div>
+              <div style={{ width: 130, color: theme.inkMuted, fontFamily: theme.mono, fontSize: 11 }}>{f}</div>
               <div style={{ color: '#9B1B1B', textDecoration: 'line-through', fontFamily: theme.mono, fontSize: 12 }}>
-                {String(change.from ?? '—')}
+                {before == null || before === '' ? '—' : String(before)}
               </div>
               <div style={{ color: theme.inkMuted }}>→</div>
               <div style={{ color: '#1F6E1F', fontFamily: theme.mono, fontSize: 12, fontWeight: 600 }}>
-                {String(change.to ?? '—')}
+                {after == null || after === '' ? '—' : String(after)}
               </div>
             </div>
           );
