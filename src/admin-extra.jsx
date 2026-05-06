@@ -2165,13 +2165,46 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
   // Pagination — Bobby 2026-05-05: default 50, dropdown for 10/25/50/100/all.
   const [pageSize, setPageSize] = React.useState(50);
   const [pageIndex, setPageIndex] = React.useState(0);
-  // Reset page index whenever the visible result-set might shrink below the
-  // current page (changing search, filter, or page size).
-  React.useEffect(() => { setPageIndex(0); }, [search, includeCancelled, pageSize]);
 
+  // TKT-12.3 — Tier multi-select + CA filter + column chooser, all
+  // persisted to localStorage so each admin's preferences survive reloads.
+  const lsGet = (k, fallback) => {
+    try {
+      const v = window.localStorage && window.localStorage.getItem(k);
+      return v == null ? fallback : JSON.parse(v);
+    } catch (_e) { return fallback; }
+  };
+  const lsSet = (k, v) => {
+    try { window.localStorage && window.localStorage.setItem(k, JSON.stringify(v)); } catch (_e) {}
+  };
+  const [tierFilter, setTierFilter] = React.useState(() => lsGet('dash:tiers', ['standard', 'vip']));
+  React.useEffect(() => { lsSet('dash:tiers', tierFilter); }, [tierFilter]);
+  const [caFilter, setCaFilter] = React.useState(() => lsGet('dash:caFilter', 'all'));
+  React.useEffect(() => { lsSet('dash:caFilter', caFilter); }, [caFilter]);
+  // Visible-column set (managed by the gear-icon ColumnChooser modal).
+  const DEFAULT_VISIBLE_COLS = [
+    'code', 'name', 'tier', 'caName', 'status', 'signDate', 'monthsOnBook',
+    'mrr', 'lastMetric', 'composite', 'mrrGrowthScore', 'attritionScore',
+  ];
+  const [visibleCols, setVisibleCols] = React.useState(() =>
+    new Set(lsGet('dash:cols', DEFAULT_VISIBLE_COLS))
+  );
+  React.useEffect(() => { lsSet('dash:cols', Array.from(visibleCols)); }, [visibleCols]);
+  const [chooserOpen, setChooserOpen] = React.useState(false);
+
+  // Reset page index whenever the visible result-set might shrink.
+  React.useEffect(() => { setPageIndex(0); }, [search, includeCancelled, pageSize, tierFilter.join(','), caFilter]);
+
+  const tierMatch = (c) => tierFilter.includes(((c.tier || 'standard') + '').toLowerCase());
+  const caMatch = (c) => {
+    if (scopeCa) return c.assignedCA === scopeCa;
+    if (caFilter === 'all') return true;
+    return c.assignedCA === caFilter;
+  };
   const allClients = (state.clients || [])
-    .filter(c => scopeCa ? c.assignedCA === scopeCa : true)
+    .filter(caMatch)
     .filter(c => includeCancelled ? true : !c.cancelDate)
+    .filter(tierMatch)
     .filter(c => !search ||
       (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
       (c.id   || '').toLowerCase().includes(search.toLowerCase()));
@@ -2198,41 +2231,121 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
     return monthsBetweenIso(c.signDate.slice(0, 7) + '-01', endIso);
   };
 
-  // Build one row per client — aggregated over the active window
+  // Build one row per client — aggregated over the active window. Includes
+  // every available data point so the column-chooser (TKT-12.3c) can let
+  // admins toggle any of them. Heavy lookups (last review/testimonial/etc.)
+  // are computed once here; the column registry only formats them.
+  const allEvents = state.growthEvents || [];
+  const allSurveys = state.surveys || [];
+  const allWeeklyCheckins  = state.weeklyCheckins  || [];
+  const allMonthlyCheckins = state.monthlyCheckins || [];
+  const allMonthlyMetricsState = state.monthlyMetrics || [];
+  const allWeeklyMetricsState  = state.weeklyMetrics  || [];
+
   const rows = allClients.map(c => {
     const eff = (typeof CABT_effectiveMonthlyMetrics === 'function')
       ? CABT_effectiveMonthlyMetrics(state.monthlyMetrics, state.weeklyMetrics, c.id)
-      : (state.monthlyMetrics || []).filter(m => m.clientId === c.id);
+      : allMonthlyMetricsState.filter(m => m.clientId === c.id);
     const inQ = eff.filter(m => m.month && m.month >= qStart && m.month <= qEnd);
     const last = inQ[inQ.length - 1];
     const sumQ = (k) => inQ.reduce((s, r) => s + (Number(r[k]) || 0), 0);
-    const sub = CABT_clientSubScores(c, state.monthlyMetrics, state.surveys, state.config, today, state.weeklyMetrics || []);
+    const firstStart = inQ[0]?.totalStudentsStart || 0;
+    const sub = CABT_clientSubScores(c, allMonthlyMetricsState, allSurveys, state.config, today, allWeeklyMetricsState);
     const ca = (state.cas || []).find(x => x.id === c.assignedCA);
-    const qLeads = sumQ('leadsGenerated');
-    const qSpend = sumQ('adSpend');
+    const ae  = (state.sales || []).find(x => x.id === c.ae);
+    const sdr = (state.sales || []).find(x => x.id === c.sdrBookedBy);
+
+    const qLeads  = sumQ('leadsGenerated');
+    const qSpend  = sumQ('adSpend');
+    const qBooked = sumQ('apptsBooked');
+    const qShowed = sumQ('leadsShowed');
+    const qSigned = sumQ('leadsSigned');
+    const qCancel = sumQ('studentsCancelled');
+
+    // Last engagement timestamps (latest event/survey/check-in by this client)
+    const latestDate = (rows, dateKey, filter) => {
+      let best = null;
+      for (const r of rows) {
+        if (filter && !filter(r)) continue;
+        const d = r[dateKey];
+        if (!d) continue;
+        if (best == null || d > best) best = d;
+      }
+      return best;
+    };
+    const eventsForClient = allEvents.filter(e => e.clientId === c.id);
+    const surveysForClient = allSurveys.filter(s => s.clientId === c.id);
+    const lastReview      = latestDate(eventsForClient, 'date', e => (e.eventType || '').toLowerCase().includes('review'));
+    const lastTestimonial = latestDate(eventsForClient, 'date', e => (e.eventType || '').toLowerCase().includes('testimonial'));
+    const lastReferral    = latestDate(eventsForClient, 'date', e => (e.eventType || '').toLowerCase().includes('referral'));
+    const lastSurvey      = latestDate(surveysForClient, 'date');
+    const lastWeeklyCheckin  = latestDate(allWeeklyCheckins.filter(w => w.clientId === c.id), 'weekStart');
+    const hasGearEvents   = eventsForClient.some(e => (e.eventType || '').toLowerCase().includes('gear'));
+
+    // Flagged-inactive in the active window? (TKT-12.2)
+    const flaggedInactiveInWindow = [
+      ...allMonthlyMetricsState, ...allWeeklyMetricsState,
+      ...allMonthlyCheckins, ...allWeeklyCheckins,
+    ].some(r => r && r.clientId === c.id && r.flaggedInactive && (() => {
+      const d = r.month || r.weekStart;
+      return d && d >= qStart && d <= qEnd;
+    })());
+
+    // Months-on-book = months since signDate to today (or cancelDate if cancelled)
+    const monthsOnBook = c.signDate
+      ? monthsBetweenIso(c.signDate.slice(0, 7) + '-01', c.cancelDate || todayIsoStr)
+      : null;
+
+    // Last metric period as ISO (used both for sort + display)
+    const lastMetricIso = last ? last.month : null;
+
     return {
       id: c.id,
+      code: c.id,
       name: c.name,
       caName: ca ? ca.name : '—',
-      caId: ca ? ca.id : '',
-      tier: c.tier || 'standard',
+      caId:   ca ? ca.id   : '',
+      aeName:  ae  ? ae.name  : '—',
+      sdrName: sdr ? sdr.name : '—',
+      tier: (c.tier || 'standard'),
       cancelled: !!c.cancelDate,
-      mrr: last ? Number(last.clientMRR || 0) : 0,
-      revenue: last ? Number(last.clientGrossRevenue || last.clientMRR || 0) : 0,
-      adSpend: qSpend,
-      leadCost: qLeads > 0 ? qSpend / qLeads : 0,
+      status: c.cancelDate ? 'cancelled' : 'active',
+      cancelDate:   c.cancelDate || null,
+      cancelReason: c.cancelReason || null,
+      signDate:    c.signDate || null,
+      termMonths:  c.termMonths || null,
+      monthsOnBook,
+      monthlyRetainer: Number(c.monthlyRetainer || 0),
+      mrr:        last ? Number(last.clientMRR || 0) : 0,
+      stripeMrr:  last ? (last.stripeObservedMRR != null ? Number(last.stripeObservedMRR) : null) : null,
+      revenue:    last ? Number(last.clientGrossRevenue || last.clientMRR || 0) : 0,
+      adSpend:    qSpend,
+      leadCost:   qLeads > 0 ? qSpend / qLeads : 0,
       leadsGenerated: qLeads,
-      apptsBooked:    sumQ('apptsBooked'),
-      leadsShowed:    sumQ('leadsShowed'),
-      leadsSigned:    sumQ('leadsSigned'),
-      studentsCancelled: sumQ('studentsCancelled'),
-      composite:  sub.performance != null ? sub.performance : null,
-      mrrGrowth:  sub.mrrGrowth,
-      leadCostScore: sub.leadCost,
-      adSpendScore:  sub.adSpend,
-      funnelScore:   sub.funnel,
-      attritionScore: sub.attrition,
-      monthsLogged: inQ.length,
+      apptsBooked:    qBooked,
+      leadsShowed:    qShowed,
+      leadsSigned:    qSigned,
+      bookingRate:    qLeads  > 0 ? qBooked / qLeads  : null,
+      showRate:       qBooked > 0 ? qShowed / qBooked : null,
+      closeRate:      qShowed > 0 ? qSigned / qShowed : null,
+      studentsStart:  firstStart,
+      studentsAcquired:  sumQ('studentsAcquired'),
+      studentsCancelled: qCancel,
+      attritionRate:   firstStart > 0 ? qCancel / firstStart : null,
+      composite:       sub.performance != null ? sub.performance : null,
+      mrrGrowthScore:  sub.mrrGrowth,
+      leadCostScore:   sub.leadCost,
+      adSpendScore:    sub.adSpend,
+      funnelScore:     sub.funnel,
+      attritionScore:  sub.attrition,
+      satisfaction:    sub.satisfaction,
+      lastMetric:    lastMetricIso,
+      lastReview, lastTestimonial, lastReferral, lastSurvey, lastWeeklyCheckin,
+      hasMembershipAddon: !!c.hasMembershipAddon,
+      hasGear:            hasGearEvents,
+      isVip:              ((c.tier || '').toLowerCase() === 'vip'),
+      flaggedInactive:    flaggedInactiveInWindow,
+      monthsLogged:   inQ.length,
       monthsExpected: monthsForClient(c),
     };
   });
@@ -2292,7 +2405,136 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
   const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString());
   const money = (n) => (n == null ? '—' : '$' + Math.round(Number(n)).toLocaleString());
   const pct = (n) => (n == null ? '—' : (n * 100).toFixed(0));
+  const pctRate = (n) => (n == null ? '—' : (n * 100).toFixed(1) + '%');
   const status = (n) => (n == null ? 'gray' : (n >= 0.80 ? 'green' : n >= 0.60 ? 'yellow' : 'red'));
+  const formatDate = (iso) => {
+    if (!iso) return '—';
+    try { return CABT_fmtDate(iso); } catch (_e) { return iso; }
+  };
+  const formatBool = (b) => (b ? 'Yes' : '—');
+
+  // ── TKT-12.3c — Column registry ───────────────────────────────────────
+  // Single source of truth for what's renderable in the dashboard table.
+  // Each entry: id, label, group, align, sortKey, render(row).
+  // visibleCols (Set, persisted in localStorage) decides which appear.
+  const COLUMNS = [
+    // Identity
+    { id: 'code',         label: 'Code',         group: 'Identity', align: 'left',  sortKey: 'id',
+      render: (r) => <span style={{ fontFamily: theme.mono || 'monospace', color: theme.inkMuted }}>{r.code}</span> },
+    { id: 'name',         label: 'Client',       group: 'Identity', align: 'left',  sortKey: 'name',
+      render: (r) => <>
+        <span style={{ fontWeight: 700 }}>{r.name}</span>
+        {r.cancelled && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: STATUS.red, letterSpacing: 0.4, textTransform: 'uppercase' }}>cancelled</span>}
+      </> },
+    { id: 'tier',         label: 'Tier',         group: 'Identity', align: 'left',  sortKey: 'tier',
+      render: (r) => <span style={{ textTransform: 'uppercase', fontSize: 10, fontWeight: 700, letterSpacing: 0.4, color: theme.inkSoft }}>{r.tier}</span> },
+    { id: 'status',       label: 'Status',       group: 'Identity', align: 'left',  sortKey: 'status',
+      render: (r) => <span style={{
+        display: 'inline-block', fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase',
+        padding: '2px 6px', borderRadius: 8,
+        background: r.cancelled ? 'rgba(220,60,60,0.12)' : 'rgba(67,160,71,0.12)',
+        color: r.cancelled ? STATUS.red : STATUS.green,
+      }}>{r.status}</span> },
+    { id: 'cancelDate',   label: 'Cancel date',  group: 'Identity', align: 'left',  sortKey: 'cancelDate',
+      mono: true, render: (r) => formatDate(r.cancelDate) },
+    { id: 'cancelReason', label: 'Cancel reason', group: 'Identity', align: 'left', sortKey: 'cancelReason',
+      render: (r) => r.cancelReason || '—' },
+    // Ownership
+    { id: 'caName',       label: 'CA',           group: 'Ownership', align: 'left',  sortKey: 'caName',
+      render: (r) => <span style={{ color: theme.inkSoft }}>{r.caName}</span> },
+    { id: 'aeName',       label: 'AE',           group: 'Ownership', align: 'left',  sortKey: 'aeName',
+      render: (r) => <span style={{ color: theme.inkSoft }}>{r.aeName}</span> },
+    { id: 'sdrName',      label: 'SDR',          group: 'Ownership', align: 'left',  sortKey: 'sdrName',
+      render: (r) => <span style={{ color: theme.inkSoft }}>{r.sdrName}</span> },
+    { id: 'signDate',     label: 'Sign date',    group: 'Ownership', align: 'left',  sortKey: 'signDate',
+      mono: true, render: (r) => formatDate(r.signDate) },
+    { id: 'termMonths',   label: 'Term',         group: 'Ownership', align: 'right', sortKey: 'termMonths',
+      mono: true, render: (r) => r.termMonths == null ? '—' : `${r.termMonths} mo` },
+    { id: 'monthsOnBook', label: 'Months on book', group: 'Ownership', align: 'right', sortKey: 'monthsOnBook',
+      mono: true, render: (r) => r.monthsOnBook == null ? '—' : r.monthsOnBook },
+    // Revenue
+    { id: 'monthlyRetainer', label: 'Retainer',  group: 'Revenue',  align: 'right', sortKey: 'monthlyRetainer',
+      mono: true, render: (r) => money(r.monthlyRetainer) },
+    { id: 'mrr',          label: 'MRR',          group: 'Revenue',  align: 'right', sortKey: 'mrr',
+      mono: true, render: (r) => money(r.mrr) },
+    { id: 'stripeMrr',    label: 'Stripe MRR',   group: 'Revenue',  align: 'right', sortKey: 'stripeMrr',
+      mono: true, render: (r) => money(r.stripeMrr) },
+    { id: 'revenue',      label: 'Revenue',      group: 'Revenue',  align: 'right', sortKey: 'revenue',
+      mono: true, render: (r) => money(r.revenue) },
+    // Funnel
+    { id: 'adSpend',      label: 'Ad Spend',     group: 'Funnel',   align: 'right', sortKey: 'adSpend',
+      mono: true, render: (r) => money(r.adSpend) },
+    { id: 'leadCost',     label: 'Lead $',       group: 'Funnel',   align: 'right', sortKey: 'leadCost',
+      mono: true, render: (r) => r.leadCost ? money(r.leadCost) : '—' },
+    { id: 'leadsGenerated', label: 'Leads',      group: 'Funnel',   align: 'right', sortKey: 'leadsGenerated',
+      mono: true, render: (r) => fmt(r.leadsGenerated) },
+    { id: 'apptsBooked',  label: 'Booked',       group: 'Funnel',   align: 'right', sortKey: 'apptsBooked',
+      mono: true, render: (r) => fmt(r.apptsBooked) },
+    { id: 'leadsShowed',  label: 'Showed',       group: 'Funnel',   align: 'right', sortKey: 'leadsShowed',
+      mono: true, render: (r) => fmt(r.leadsShowed) },
+    { id: 'leadsSigned',  label: 'Signed',       group: 'Funnel',   align: 'right', sortKey: 'leadsSigned',
+      mono: true, render: (r) => fmt(r.leadsSigned) },
+    { id: 'bookingRate',  label: 'Booking %',    group: 'Funnel',   align: 'right', sortKey: 'bookingRate',
+      mono: true, render: (r) => pctRate(r.bookingRate) },
+    { id: 'showRate',     label: 'Show %',       group: 'Funnel',   align: 'right', sortKey: 'showRate',
+      mono: true, render: (r) => pctRate(r.showRate) },
+    { id: 'closeRate',    label: 'Close %',      group: 'Funnel',   align: 'right', sortKey: 'closeRate',
+      mono: true, render: (r) => pctRate(r.closeRate) },
+    // Students
+    { id: 'studentsStart', label: 'Students',    group: 'Students', align: 'right', sortKey: 'studentsStart',
+      mono: true, render: (r) => fmt(r.studentsStart) },
+    { id: 'studentsAcquired', label: 'Acquired', group: 'Students', align: 'right', sortKey: 'studentsAcquired',
+      mono: true, render: (r) => fmt(r.studentsAcquired) },
+    { id: 'studentsCancelled', label: 'Cancel', group: 'Students',  align: 'right', sortKey: 'studentsCancelled',
+      mono: true, render: (r) => <span style={{ color: r.studentsCancelled > 0 ? STATUS.red : theme.ink }}>{fmt(r.studentsCancelled)}</span> },
+    { id: 'attritionRate', label: 'Attrition %', group: 'Students', align: 'right', sortKey: 'attritionRate',
+      mono: true, render: (r) => pctRate(r.attritionRate) },
+    // Sub-scores (per-client)
+    { id: 'composite',     label: 'Composite',   group: 'Sub-scores', align: 'right', sortKey: 'composite',
+      mono: true, render: (r) => <>
+        <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: STATUS[status(r.composite)] || theme.inkMuted, marginRight: 6, verticalAlign: 'middle' }}/>
+        <strong>{pct(r.composite)}</strong>
+      </> },
+    { id: 'mrrGrowthScore', label: 'MRR Growth', group: 'Sub-scores', align: 'right', sortKey: 'mrrGrowthScore',
+      mono: true, render: (r) => pct(r.mrrGrowthScore) },
+    { id: 'leadCostScore',  label: 'Lead Cost',  group: 'Sub-scores', align: 'right', sortKey: 'leadCostScore',
+      mono: true, render: (r) => pct(r.leadCostScore) },
+    { id: 'adSpendScore',   label: 'Ad Spend (score)', group: 'Sub-scores', align: 'right', sortKey: 'adSpendScore',
+      mono: true, render: (r) => pct(r.adSpendScore) },
+    { id: 'funnelScore',    label: 'Funnel',     group: 'Sub-scores', align: 'right', sortKey: 'funnelScore',
+      mono: true, render: (r) => pct(r.funnelScore) },
+    { id: 'attritionScore', label: 'Attrition (score)', group: 'Sub-scores', align: 'right', sortKey: 'attritionScore',
+      mono: true, render: (r) => pct(r.attritionScore) },
+    { id: 'satisfaction',   label: 'Satisfaction', group: 'Sub-scores', align: 'right', sortKey: 'satisfaction',
+      mono: true, render: (r) => pct(r.satisfaction) },
+    // Engagement
+    { id: 'lastMetric',     label: 'Last metric',     group: 'Engagement', align: 'left', sortKey: 'lastMetric',
+      mono: true, render: (r) => formatDate(r.lastMetric) },
+    { id: 'lastReview',     label: 'Last review',     group: 'Engagement', align: 'left', sortKey: 'lastReview',
+      mono: true, render: (r) => formatDate(r.lastReview) },
+    { id: 'lastTestimonial', label: 'Last testimonial', group: 'Engagement', align: 'left', sortKey: 'lastTestimonial',
+      mono: true, render: (r) => formatDate(r.lastTestimonial) },
+    { id: 'lastReferral',   label: 'Last referral',   group: 'Engagement', align: 'left', sortKey: 'lastReferral',
+      mono: true, render: (r) => formatDate(r.lastReferral) },
+    { id: 'lastSurvey',     label: 'Last survey',     group: 'Engagement', align: 'left', sortKey: 'lastSurvey',
+      mono: true, render: (r) => formatDate(r.lastSurvey) },
+    { id: 'lastWeeklyCheckin', label: 'Last check-in', group: 'Engagement', align: 'left', sortKey: 'lastWeeklyCheckin',
+      mono: true, render: (r) => formatDate(r.lastWeeklyCheckin) },
+    // Flags
+    { id: 'hasMembershipAddon', label: 'Membership',  group: 'Flags', align: 'center', sortKey: 'hasMembershipAddon',
+      render: (r) => formatBool(r.hasMembershipAddon) },
+    { id: 'hasGear',        label: 'Gear',           group: 'Flags', align: 'center', sortKey: 'hasGear',
+      render: (r) => formatBool(r.hasGear) },
+    { id: 'isVip',          label: 'VIP',            group: 'Flags', align: 'center', sortKey: 'isVip',
+      render: (r) => formatBool(r.isVip) },
+    { id: 'flaggedInactive', label: 'Flagged inactive', group: 'Flags', align: 'center', sortKey: 'flaggedInactive',
+      render: (r) => r.flaggedInactive ? <span style={{ color: STATUS.red, fontWeight: 700 }}>Yes</span> : '—' },
+    // Coverage (always-visible, last)
+    { id: 'monthsCoverage', label: 'Months',         group: 'Coverage', align: 'right', sortKey: 'monthsLogged',
+      mono: true, render: (r) => <span style={{ color: theme.inkMuted }}>{r.monthsLogged}{r.monthsExpected ? `/${r.monthsExpected}` : ''}</span> },
+  ];
+  const COLUMN_GROUPS = ['Identity', 'Ownership', 'Revenue', 'Funnel', 'Students', 'Sub-scores', 'Engagement', 'Flags', 'Coverage'];
+  const visibleColumnObjs = COLUMNS.filter(col => visibleCols.has(col.id));
 
   // Pagination — slice the sorted result-set. pageSize='all' shows everything.
   const totalRows = sorted.length;
@@ -2395,6 +2637,77 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
             <input type="checkbox" checked={includeCancelled} onChange={(e) => setIncludeCancelled(e.target.checked)} />
             Include cancelled
           </label>
+          {/* TKT-12.3c — column chooser entry point */}
+          <button
+            onClick={() => setChooserOpen(true)}
+            aria-label="Choose columns"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '8px 12px', height: 36,
+              background: theme.surface, color: theme.ink,
+              border: `1px solid ${theme.rule}`, borderRadius: 8,
+              fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+              cursor: 'pointer',
+            }}
+          >
+            <Icon name="cog" size={14} color={theme.inkMuted}/>
+            Columns
+            <span style={{ color: theme.inkMuted, fontWeight: 500, marginLeft: 2 }}>· {visibleCols.size}</span>
+          </button>
+        </div>
+
+        {/* TKT-12.3a — Tier multi-select chips. Default Standard + VIP. */}
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 12, color: theme.inkMuted, fontWeight: 600 }}>Tier</span>
+          {[
+            { v: 'standard',   label: 'Standard'   },
+            { v: 'vip',        label: 'VIP'        },
+            { v: 'reach',      label: 'Reach'      },
+            { v: 'a la carte', label: 'À la carte' },
+          ].map(t => {
+            const checked = tierFilter.includes(t.v);
+            return (
+              <button key={t.v} onClick={() => {
+                setTierFilter(prev => {
+                  const set = new Set(prev);
+                  if (set.has(t.v)) set.delete(t.v); else set.add(t.v);
+                  // Don't allow zero — at least one tier must be selected
+                  return set.size === 0 ? prev : Array.from(set);
+                });
+              }} style={{
+                padding: '6px 12px', fontSize: 12, fontWeight: 700,
+                background: checked ? theme.ink : theme.surface,
+                color: checked ? (theme.accentInk || '#fff') : theme.ink,
+                border: `1px solid ${checked ? theme.ink : theme.rule}`,
+                borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+              }}>{checked ? '✓ ' : ''}{t.label}</button>
+            );
+          })}
+
+          {/* TKT-12.3b — CA filter dropdown. Locked for non-admin (scopeCa) views. */}
+          {!scopeCa && (state.cas || []).length > 0 && (
+            <>
+              <span style={{ fontSize: 12, color: theme.inkMuted, fontWeight: 600, marginLeft: 8 }}>CA</span>
+              <select
+                value={caFilter}
+                onChange={(e) => setCaFilter(e.target.value)}
+                style={{
+                  padding: '6px 30px 6px 10px',
+                  background: theme.surface, color: theme.ink,
+                  border: `1px solid ${theme.rule}`, borderRadius: 999,
+                  fontSize: 12, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer',
+                  appearance: 'none', WebkitAppearance: 'none',
+                  backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='${encodeURIComponent(theme.inkMuted)}' d='M0 0h10L5 6z'/></svg>")`,
+                  backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
+                }}
+              >
+                <option value="all">All CAs</option>
+                {(state.cas || []).filter(ca => ca.active).map(ca => (
+                  <option key={ca.id} value={ca.id}>{ca.id} · {ca.name}</option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
 
         {/* Period selector — Bobby 2026-05-06: choose month / quarter / year /
@@ -2443,58 +2756,122 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
       {PaginationBar}
 
       <div style={{ overflowX: 'auto', background: theme.surface, border: `1px solid ${theme.rule}`, borderRadius: theme.radius }}>
-        <table style={{ width: '100%', minWidth: 1400, borderCollapse: 'collapse' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              <Th k="id">Code</Th>
-              <Th k="name">Client</Th>
-              <Th k="caName">CA</Th>
-              <Th k="tier">Tier</Th>
-              <Th k="composite" align="right">Composite</Th>
-              <Th k="mrr" align="right">MRR</Th>
-              <Th k="revenue" align="right">Revenue</Th>
-              <Th k="adSpend" align="right">Ad Spend</Th>
-              <Th k="leadCost" align="right">Lead $</Th>
-              <Th k="leadsGenerated" align="right">Leads</Th>
-              <Th k="apptsBooked" align="right">Booked</Th>
-              <Th k="leadsShowed" align="right">Showed</Th>
-              <Th k="leadsSigned" align="right">Signed</Th>
-              <Th k="studentsCancelled" align="right">Cancel</Th>
-              <Th k="monthsLogged" align="right">Months</Th>
+              {visibleColumnObjs.map(col => (
+                <Th key={col.id} k={col.sortKey || col.id} align={col.align}>{col.label}</Th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {totalRows === 0 && (
-              <tr><td colSpan={15} style={{ padding: 24, textAlign: 'center', color: theme.inkMuted, fontSize: 13 }}>No clients match this filter.</td></tr>
+              <tr><td colSpan={Math.max(1, visibleColumnObjs.length)} style={{ padding: 24, textAlign: 'center', color: theme.inkMuted, fontSize: 13 }}>No clients match this filter.</td></tr>
             )}
             {paged.map(r => (
               <tr key={r.id}
                   onClick={() => navigate('client-detail', { clientId: r.id })}
                   style={{ cursor: 'pointer' }}>
-                <Td mono color={theme.inkMuted}>{r.id}</Td>
-                <Td bold>
-                  <span style={{ marginRight: 6 }}>{r.name}</span>
-                  {r.cancelled && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: STATUS.red, letterSpacing: 0.4, textTransform: 'uppercase' }}>cancelled</span>}
-                </Td>
-                <Td color={theme.inkSoft}>{r.caName}</Td>
-                <Td color={theme.inkSoft}>
-                  <span style={{ textTransform: 'uppercase', fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>{r.tier}</span>
-                </Td>
-                <Td align="right" mono bold status={status(r.composite)}>{pct(r.composite)}</Td>
-                <Td align="right" mono>{money(r.mrr)}</Td>
-                <Td align="right" mono>{money(r.revenue)}</Td>
-                <Td align="right" mono>{money(r.adSpend)}</Td>
-                <Td align="right" mono>{r.leadCost ? money(r.leadCost) : '—'}</Td>
-                <Td align="right" mono>{fmt(r.leadsGenerated)}</Td>
-                <Td align="right" mono>{fmt(r.apptsBooked)}</Td>
-                <Td align="right" mono>{fmt(r.leadsShowed)}</Td>
-                <Td align="right" mono>{fmt(r.leadsSigned)}</Td>
-                <Td align="right" mono color={r.studentsCancelled > 0 ? STATUS.red : theme.ink}>{fmt(r.studentsCancelled)}</Td>
-                <Td align="right" mono color={theme.inkMuted}>{r.monthsLogged}{r.monthsExpected ? `/${r.monthsExpected}` : ''}</Td>
+                {visibleColumnObjs.map(col => (
+                  <Td key={col.id} align={col.align} mono={col.mono}>{col.render(r)}</Td>
+                ))}
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+
+      {chooserOpen && (
+        <ColumnChooserModal
+          theme={theme}
+          columns={COLUMNS}
+          groups={COLUMN_GROUPS}
+          visible={visibleCols}
+          onChange={setVisibleCols}
+          onClose={() => setChooserOpen(false)}
+          defaults={DEFAULT_VISIBLE_COLS}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Column chooser modal — TKT-12.3c ──────────────────────────────────────
+// Lets admins toggle which columns appear on AdminDashboard. Grouped by
+// category (Identity / Ownership / Revenue / Funnel / etc.) for scanability.
+// Persistence is owned by the caller (writes to localStorage on change).
+function ColumnChooserModal({ theme, columns, groups, visible, onChange, onClose, defaults }) {
+  const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
+  const toggle = (id) => {
+    const next = new Set(visible);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    onChange(next);
+  };
+  const reset = () => onChange(new Set(defaults));
+  const showAll = () => onChange(new Set(columns.map(c => c.id)));
+  const showNone = () => onChange(new Set());
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(8, 12, 24, 0.55)',
+      zIndex: 1000, display: 'flex',
+      alignItems: isDesktop ? 'center' : 'flex-end', justifyContent: 'center',
+      backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+      padding: isDesktop ? 32 : 0,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: theme.bg, color: theme.ink,
+        width: '100%', maxWidth: isDesktop ? 640 : 560,
+        maxHeight: isDesktop ? '88vh' : '88vh',
+        borderTopLeftRadius: 24, borderTopRightRadius: 24,
+        borderBottomLeftRadius: isDesktop ? 24 : 0,
+        borderBottomRightRadius: isDesktop ? 24 : 0,
+        overflowY: 'auto',
+        padding: isDesktop ? '20px 24px 24px' : '14px 18px calc(env(safe-area-inset-bottom, 0px) + 24px)',
+        boxShadow: '0 24px 60px rgba(0,0,0,0.32)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{ fontFamily: theme.serif || 'inherit', fontSize: 20, fontWeight: 600 }}>Choose columns</div>
+          <button onClick={onClose} aria-label="Close" style={{
+            width: 32, height: 32, borderRadius: 16, border: 'none', background: theme.bgElev, color: theme.inkSoft,
+            fontSize: 18, cursor: 'pointer', padding: 0,
+          }}>×</button>
+        </div>
+        <div style={{ fontSize: 12, color: theme.inkMuted, marginBottom: 14, lineHeight: 1.5 }}>
+          Toggle which data points appear as columns on the dashboard. Selection persists across reloads.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          <button onClick={reset} style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: theme.surface, border: `1px solid ${theme.rule}`, borderRadius: 8, color: theme.ink, cursor: 'pointer', fontFamily: 'inherit' }}>Reset to default</button>
+          <button onClick={showAll} style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: theme.surface, border: `1px solid ${theme.rule}`, borderRadius: 8, color: theme.ink, cursor: 'pointer', fontFamily: 'inherit' }}>Show all</button>
+          <button onClick={showNone} style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: theme.surface, border: `1px solid ${theme.rule}`, borderRadius: 8, color: theme.ink, cursor: 'pointer', fontFamily: 'inherit' }}>Hide all</button>
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: theme.inkMuted }}>{visible.size} of {columns.length} shown</span>
+        </div>
+        {groups.map(group => {
+          const colsInGroup = columns.filter(c => c.group === group);
+          if (colsInGroup.length === 0) return null;
+          return (
+            <div key={group} style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', color: theme.inkMuted, marginBottom: 6 }}>{group}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 6 }}>
+                {colsInGroup.map(col => {
+                  const checked = visible.has(col.id);
+                  return (
+                    <label key={col.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                      borderRadius: 8, cursor: 'pointer',
+                      background: checked ? theme.accent + '12' : theme.surface,
+                      border: `1px solid ${checked ? theme.accent + '55' : theme.rule}`,
+                      fontSize: 13,
+                    }}>
+                      <input type="checkbox" checked={checked} onChange={() => toggle(col.id)}
+                             style={{ width: 16, height: 16, accentColor: theme.accent }}/>
+                      <span style={{ color: theme.ink, fontWeight: 600 }}>{col.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
