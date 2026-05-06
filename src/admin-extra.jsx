@@ -1968,10 +1968,28 @@ function AdminFormulaInspector({ state, theme, navigate }) {
       background: theme.bgSoft || 'rgba(255,255,255,0.04)',
       border: `1px solid ${theme.rule}`,
       borderRadius: 8, padding: '8px 12px', fontSize: 11, fontFamily: theme.mono,
-      color: theme.ink, lineHeight: 1.5, marginTop: 6, marginBottom: 8,
+      color: theme.ink, lineHeight: 1.5, marginTop: 6, marginBottom: 0,
       wordBreak: 'break-word',
     }}>{children}</div>
   );
+
+  // TKT-12.6 — Plain-English prose for every formula. Source text lives in
+  // src/formula-explanations.js (decoupled so non-engineers can revise the
+  // wording). Renders below the monospace formula with a horizontal hairline
+  // separator between the math and the prose.
+  const Prose = ({ id }) => {
+    const text = (window.FORMULA_EXPLANATIONS || {})[id];
+    if (!text) return null;
+    return (
+      <>
+        <div style={{ height: 1, background: theme.rule, opacity: 0.5, margin: '8px 0' }}/>
+        <div style={{
+          fontSize: 12, lineHeight: 1.55, color: theme.inkSoft,
+          padding: '0 2px', marginBottom: 8,
+        }}>{text}</div>
+      </>
+    );
+  };
 
   const myClients = (state.clients || []).filter(c => c.assignedCA === selectedCa?.id && !c.cancelDate);
   const eligibleClients = myClients.filter(c => (c.tier || 'standard') === 'standard' || c.tier === 'vip');
@@ -2002,6 +2020,7 @@ function AdminFormulaInspector({ state, theme, navigate }) {
               = ({(score.performance*100).toFixed(1)} + {(score.retention*100).toFixed(1)} + {(score.growth*100).toFixed(1)}) ÷ 3<br/>
               = {(score.composite*100).toFixed(1)}
             </Formula>
+            <Prose id="composite"/>
             <KV k="Performance bucket" v={(score.performance*100).toFixed(1)} mono/>
             <KV k="Retention bucket" v={(score.retention*100).toFixed(1)} mono/>
             <KV k="Growth bucket" v={(score.growth*100).toFixed(1)} mono/>
@@ -2018,6 +2037,7 @@ function AdminFormulaInspector({ state, theme, navigate }) {
               per-client performance = avg of 5 sub-scores (skip nulls):<br/>
               &nbsp;&nbsp;MRR Growth · Lead Cost · Ad Spend · Funnel · Attrition
             </Formula>
+            <Prose id="performance"/>
             <KV k="Raw perf avg (clients with data)" v={(score.performanceRaw*100).toFixed(1)} mono/>
             <KV k="× Book completeness gate" v={(score.bookCompleteness*100).toFixed(1) + '%'} mono/>
             <KV k="= Performance bucket" v={(score.performance*100).toFixed(1)} mono/>
@@ -2053,6 +2073,74 @@ function AdminFormulaInspector({ state, theme, navigate }) {
             </div>
           </Section>
 
+          {/* TKT-12.6 — per-sub-score sections (5 of them) drilling into each
+              Performance ingredient. Each renders monospace formula + hairline
+              + plain-English prose from window.FORMULA_EXPLANATIONS. */}
+          <Section id="mrrGrowth" title="Sub-score · MRR Growth">
+            <Formula>
+              mrrGrowth = clamp((lastMonthMRR − firstMonthMRR) ÷ fullCreditMrrGrowth, 0, 1)<br/>
+              <br/>
+              <span style={{ color: theme.inkMuted }}>Skipped (null) for clients younger than gracePeriodDays.</span>
+            </Formula>
+            <Prose id="mrrGrowth"/>
+            <KV k="Full-credit threshold ($/mo)" v={`$${cfg.fullCreditMrrGrowth || 750}`} mono/>
+            <KV k="Grace period (days)" v={cfg.gracePeriodDays || 90} mono/>
+          </Section>
+
+          <Section id="leadCost" title="Sub-score · Lead Cost">
+            <Formula>
+              ratio = SUM(adSpend across quarter) ÷ SUM(leadsGenerated across quarter)<br/>
+              <br/>
+              ratio ≤ best     → 1.0<br/>
+              ratio ≤ great    → 0.75<br/>
+              ratio ≤ ok       → 0.5<br/>
+              else             → 0
+            </Formula>
+            <Prose id="leadCost"/>
+            <KV k="Best (≤ $)" v={`$${cfg.leadCostBest || 5}`} mono/>
+            <KV k="Great (≤ $)" v={`$${cfg.leadCostGreat || 10}`} mono/>
+            <KV k="OK (≤ $)" v={`$${cfg.leadCostAcceptable || 20}`} mono/>
+          </Section>
+
+          <Section id="adSpend" title="Sub-score · Ad Spend">
+            <Formula>
+              monthlyTarget = MAX(adSpendFloor, adSpendPctOfGross × monthMRR)<br/>
+              quarterTarget = SUM of monthlyTarget across the quarter<br/>
+              <br/>
+              adSpend = MIN(1, SUM(actual adSpend) ÷ quarterTarget)
+            </Formula>
+            <Prose id="adSpend"/>
+            <KV k="Pct of MRR target" v={`${((cfg.adSpendPctOfGross || 0.10)*100).toFixed(0)}%`} mono/>
+            <KV k="Floor (per month)" v={`$${cfg.adSpendFloor || 1000}`} mono/>
+          </Section>
+
+          <Section id="funnel" title="Sub-score · Funnel">
+            <Formula>
+              bookRate  = SUM(apptsBooked)  ÷ SUM(leadsGenerated)<br/>
+              showRate  = SUM(leadsShowed)  ÷ SUM(apptsBooked)<br/>
+              closeRate = SUM(leadsSigned)  ÷ SUM(leadsShowed)<br/>
+              <br/>
+              funnel = avg of clamp(rate ÷ floor, 0, 1) for each rate
+            </Formula>
+            <Prose id="funnel"/>
+            <KV k="Booking floor" v={`${((cfg.bookingFloor || 0.30)*100).toFixed(0)}%`} mono/>
+            <KV k="Show floor" v={`${((cfg.showFloor || 0.50)*100).toFixed(0)}%`} mono/>
+            <KV k="Close floor" v={`${((cfg.closeFloor || 0.70)*100).toFixed(0)}%`} mono/>
+          </Section>
+
+          <Section id="attrition" title="Sub-score · Attrition">
+            <Formula>
+              cancelRate = SUM(studentsCancelled in quarter) ÷ firstMonth.totalStudentsStart<br/>
+              <br/>
+              cancelRate ≤ greenFloor → 1<br/>
+              cancelRate ≥ critCeil   → 0<br/>
+              else                    → 1 − (cancelRate − greenFloor) ÷ (critCeil − greenFloor)
+            </Formula>
+            <Prose id="attrition"/>
+            <KV k="Green floor" v={`${((cfg.attritionGreenFloor || 0.03)*100).toFixed(0)}%`} mono/>
+            <KV k="Critical ceiling" v={`${((cfg.attritionCriticalCeiling || 0.05)*100).toFixed(0)}%`} mono/>
+          </Section>
+
           <Section id="retention" title={`Retention bucket — ${(score.retention*100).toFixed(0)}/100`}>
             <Formula>
               retention = (eligible_at_quarter_start − cancellations_counts_against_ca) ÷ eligible_at_quarter_start<br/>
@@ -2060,6 +2148,7 @@ function AdminFormulaInspector({ state, theme, navigate }) {
               Linear from cliff ({((cfg.retentionCliff || cfg.retention_cliff || 0.97)*100).toFixed(0)}%) to 100%.<br/>
               Below cliff = 0; at 100% retained = 1.0.
             </Formula>
+            <Prose id="retention"/>
             <KV k="Eligible at quarter start" v={score.eligibleAtQuarterStart || eligibleAtStart.length} mono/>
             <KV k="Cancellations counted against CA" v={score.cancelledThisQuarter || 0} mono/>
             <KV k="= Retention rate" v={
@@ -2086,6 +2175,7 @@ function AdminFormulaInspector({ state, theme, navigate }) {
               &nbsp;&nbsp;• Has gear / products<br/>
               &nbsp;&nbsp;• +0.25 per extra referral, capped at +1
             </Formula>
+            <Prose id="growth"/>
             <KV k="Eligible 90+ day clients" v={score.growthEligibleCount || 0} mono/>
             <KV k="Max possible points" v={(score.growthEligibleCount || 0) * 8} mono/>
             <KV k="= Growth bucket" v={(score.growth*100).toFixed(1)} mono/>
@@ -2097,6 +2187,7 @@ function AdminFormulaInspector({ state, theme, navigate }) {
               total_pot = agency_gross_last_month × pot_pct (from quarter_inputs)<br/>
               mrr_share = CA's eligible-MRR ÷ all eligible-MRR (across active CAs)
             </Formula>
+            <Prose id="payout"/>
             <KV k="Total pot" v={CABT_fmtMoney(score.totalPot || 0)} mono/>
             <KV k="CA's eligible MRR" v={CABT_fmtMoney(score.caEligibleMrr || 0)} mono/>
             <KV k="MRR share" v={`${((score.mrrShare || 0)*100).toFixed(2)}%`} mono/>
