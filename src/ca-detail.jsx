@@ -705,11 +705,13 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
     return null; // 'all'
   };
 
-  // Build rows: in 'all' mode each event = a row; in grouped modes each
-  // group becomes a rollup row with summed/averaged metrics + a count of
-  // each event type, with the underlying events as expandable children.
+  // PRD-strict (TKT-12.4): "Render one row per data event" = base behavior;
+  // "per-cadence aggregation (Quarter & Year = rollup + expandable)" = only
+  // Q & Y aggregate. Week / Month / All = flat 1-row-per-event. The cadence
+  // toggle on Week/Month still affects the date column label format (week-of
+  // / month label) and the period summary in the header.
   const rows = React.useMemo(() => {
-    if (cadence === 'all') {
+    if (cadence === 'all' || cadence === 'week' || cadence === 'month') {
       return events.map(e => ({ ...e, _isGroup: false, _children: [] }));
     }
     const groups = new Map();
@@ -920,14 +922,14 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
       </div>
 
       <div style={{ fontSize: 11, color: theme.inkMuted }}>
-        {events.length} log{events.length === 1 ? '' : 's'} for {client.name}{cadence !== 'all' && ` · ${sorted.length} ${cadence}${sorted.length === 1 ? '' : 's'}`} · click any column to sort{cadence !== 'all' && ' · tap a row to expand'}
+        {events.length} log{events.length === 1 ? '' : 's'} for {client.name}{(cadence === 'quarter' || cadence === 'year') && ` · ${sorted.length} ${cadence}${sorted.length === 1 ? '' : 's'}`} · click any column to sort{(cadence === 'quarter' || cadence === 'year') && ' · tap a rollup row to expand'}
       </div>
 
       <div style={{ overflowX: 'auto', background: theme.surface, border: `1px solid ${theme.rule}`, borderRadius: theme.radius }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              {cadence !== 'all' && <th style={{ width: 28, padding: '10px 4px', borderBottom: `1px solid ${theme.rule}`, background: theme.bgElev, position: 'sticky', top: 0, zIndex: 1 }}/>}
+              {(cadence === 'quarter' || cadence === 'year') && <th style={{ width: 28, padding: '10px 4px', borderBottom: `1px solid ${theme.rule}`, background: theme.bgElev, position: 'sticky', top: 0, zIndex: 1 }}/>}
               {visibleColumnObjs.map(col => (
                 <Th key={col.id} k={col.sortKey || col.id} align={col.align}>{col.label}</Th>
               ))}
@@ -935,14 +937,14 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
           </thead>
           <tbody>
             {sorted.length === 0 && (
-              <tr><td colSpan={visibleColumnObjs.length + (cadence !== 'all' ? 1 : 0)} style={{ padding: 24, textAlign: 'center', color: theme.inkMuted, fontSize: 13 }}>No logs yet for this client.</td></tr>
+              <tr><td colSpan={visibleColumnObjs.length + ((cadence === 'quarter' || cadence === 'year') ? 1 : 0)} style={{ padding: 24, textAlign: 'center', color: theme.inkMuted, fontSize: 13 }}>No logs yet for this client.</td></tr>
             )}
             {sorted.map(r => {
               const isExpanded = expanded.has(r.id);
               return (
                 <React.Fragment key={r.id}>
                   <tr onClick={() => onEventClick(r)} style={{ cursor: 'pointer' }}>
-                    {cadence !== 'all' && (
+                    {(cadence === 'quarter' || cadence === 'year') && (
                       <td style={{ padding: '10px 4px', borderBottom: `1px solid ${theme.rule}`, color: theme.inkMuted, fontSize: 14, textAlign: 'center' }}>
                         {r._isGroup && r._children.length > 0 ? (isExpanded ? '▾' : '▸') : ''}
                       </td>

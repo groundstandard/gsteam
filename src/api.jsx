@@ -370,6 +370,83 @@ const CABT_api = {
     if (error) throw error;
     return toUI(data);
   },
+  // TKT-12.4 — per-client Dashboard tab data fetch. Returns the union of every
+  // log type for one client, normalised to {kind, source, id, date, ...}. Used
+  // by ClientDashboardTab; falls back to in-state slices in non-supabase modes.
+  async fetchClientDashboardRows(clientId) {
+    if (CABT_getApiMode() !== 'supabase') return { rows: [] };
+    const sb = await CABT_sb();
+    const cid = clientId;
+    const [mm, wm, mc, wc, ev, sv] = await Promise.all([
+      sb.from('monthly_metrics').select('*').eq('client_id', cid),
+      sb.from('weekly_metrics').select('*').eq('client_id', cid),
+      sb.from('monthly_checkins').select('*').eq('client_id', cid),
+      sb.from('weekly_checkins').select('*').eq('client_id', cid),
+      sb.from('growth_events').select('*').eq('client_id', cid),
+      sb.from('surveys').select('*').eq('client_id', cid),
+    ]);
+    const err = mm.error || wm.error || mc.error || wc.error || ev.error || sv.error;
+    if (err) throw err;
+    const num = (v) => (v == null ? null : Number(v));
+    const rows = [];
+    (mm.data || []).forEach(r => { const u = toUI(r); rows.push({
+      kind: 'monthly-metrics', source: 'monthly_metrics', id: u.id, date: u.month, sortDate: u.month,
+      caId: u.caId, mrr: num(u.clientMRR), grossRevenue: num(u.clientGrossRevenue),
+      adSpend: num(u.adSpend), leadCost: num(u.leadCost),
+      leadsGenerated: num(u.leadsGenerated), apptsBooked: num(u.apptsBooked),
+      leadsShowed: num(u.leadsShowed), leadsSigned: num(u.leadsSigned),
+      studentsStart: num(u.totalStudentsStart), studentsAcquired: num(u.studentsAcquired),
+      studentsCancelled: num(u.studentsCancelled), surveyScore: null,
+      notes: u.notes || '', flaggedInactive: !!u.flaggedInactive, _payload: u,
+    }); });
+    (wm.data || []).forEach(r => { const u = toUI(r); rows.push({
+      kind: 'weekly-metrics', source: 'weekly_metrics', id: u.id, date: u.weekStart, sortDate: u.weekStart,
+      caId: u.caId, mrr: num(u.clientMRR), grossRevenue: num(u.clientGrossRevenue),
+      adSpend: num(u.adSpend), leadCost: num(u.leadCost),
+      leadsGenerated: num(u.leadsGenerated), apptsBooked: num(u.apptsBooked),
+      leadsShowed: num(u.leadsShowed), leadsSigned: num(u.leadsSigned),
+      studentsStart: num(u.totalStudentsStart), studentsAcquired: num(u.studentsAcquired),
+      studentsCancelled: num(u.studentsCancelled), surveyScore: null,
+      notes: u.notes || '', flaggedInactive: !!u.flaggedInactive, _payload: u,
+    }); });
+    (mc.data || []).forEach(r => { const u = toUI(r); rows.push({
+      kind: 'monthly-checkin', source: 'monthly_checkins', id: u.id, date: u.month, sortDate: u.month,
+      caId: u.caId, mrr: null, grossRevenue: null, adSpend: null, leadCost: null,
+      leadsGenerated: null, apptsBooked: null, leadsShowed: null, leadsSigned: null,
+      studentsStart: null, studentsAcquired: null, studentsCancelled: null,
+      surveyScore: null,
+      notes: [u.concern, u.win, u.accountAction, u.agencyAction].filter(Boolean).join(' · '),
+      flaggedInactive: !!u.flaggedInactive, _payload: u,
+    }); });
+    (wc.data || []).forEach(r => { const u = toUI(r); rows.push({
+      kind: 'weekly-checkin', source: 'weekly_checkins', id: u.id, date: u.weekStart, sortDate: u.weekStart,
+      caId: u.caId, mrr: null, grossRevenue: null, adSpend: null, leadCost: null,
+      leadsGenerated: null, apptsBooked: null, leadsShowed: null, leadsSigned: null,
+      studentsStart: null, studentsAcquired: null, studentsCancelled: null,
+      surveyScore: null,
+      notes: [u.concern, u.win, u.accountAction, u.agencyAction].filter(Boolean).join(' · '),
+      flaggedInactive: !!u.flaggedInactive, _payload: u,
+    }); });
+    (ev.data || []).forEach(r => { const u = toUI(r); rows.push({
+      kind: 'event', source: 'growth_events', id: u.id, date: u.date, sortDate: u.date,
+      caId: u.loggedBy || u.caId, mrr: null, grossRevenue: null, adSpend: null, leadCost: null,
+      leadsGenerated: null, apptsBooked: null, leadsShowed: null, leadsSigned: null,
+      studentsStart: null, studentsAcquired: null, studentsCancelled: null,
+      surveyScore: null,
+      notes: `${u.eventType || ''}${u.notes ? ' · ' + u.notes : ''}${u.saleTotal > 0 ? ' · sale ' + u.saleTotal : ''}`,
+      flaggedInactive: false, _payload: u,
+    }); });
+    (sv.data || []).forEach(r => { const u = toUI(r); rows.push({
+      kind: 'survey', source: 'surveys', id: u.id, date: u.date, sortDate: u.date,
+      caId: u.caId, mrr: null, grossRevenue: null, adSpend: null, leadCost: null,
+      leadsGenerated: null, apptsBooked: null, leadsShowed: null, leadsSigned: null,
+      studentsStart: null, studentsAcquired: null, studentsCancelled: null,
+      surveyScore: ((Number(u.overall || 0) + Number(u.responsiveness || 0) + Number(u.followThrough || 0) + Number(u.communication || 0)) / 4) || null,
+      notes: u.comment || '', flaggedInactive: false, _payload: u,
+    }); });
+    rows.sort((a, b) => (b.sortDate || '').localeCompare(a.sortDate || ''));
+    return { rows };
+  },
   // F1.1.3 — paginated audit_log fetch with optional filters.
   async fetchAuditLog({ actorId, tableName, action, fromDate, toDate, limit = 50, offset = 0 } = {}) {
     if (CABT_getApiMode() !== 'supabase') return { rows: [], hasMore: false };
