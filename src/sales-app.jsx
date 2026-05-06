@@ -353,38 +353,51 @@ function SalesCommissions({ state, rep, theme }) {
                   {CABT_fmtMoney(c.monthlyRetainer)}/mo · {c.termMonths}mo · Signed {CABT_fmtDate(c.signDate)}
                   {c.cancelDate && <span style={{ color: STATUS.red, fontWeight: 600 }}> · Cancelled {CABT_fmtDate(c.cancelDate)}</span>}
                 </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {/* TKT-12.5 — vesting-milestones list rendered as a row-per-
+                    milestone table with explicit Date / Amount columns + a
+                    Status chip. Pending milestones with 0–30 days until vest
+                    get the accent-color row highlight. Paid amounts render
+                    with a strikethrough so cleared milestones are visually
+                    distinct from active ones. */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(72px, 1fr) minmax(96px, 1.2fr) minmax(80px, 1fr) auto', columnGap: 10, rowGap: 4, alignItems: 'center', fontSize: 12, marginTop: 2 }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.5, textTransform: 'uppercase' }}>Milestone</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.5, textTransform: 'uppercase' }}>Date</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.5, textTransform: 'uppercase', textAlign: 'right' }}>Amount</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.5, textTransform: 'uppercase', textAlign: 'right' }}>Status</div>
                   {ms.map((m, i) => {
                     const colors = { paid: STATUS.green, pending: STATUS.yellow, clawed: STATUS.red };
                     const c2 = colors[m.status];
-                    // TKT-12.5 — milestones within next 30 days that are still
-                    // pending get the accent-color highlight so reps see what's
-                    // about to vest. Paid get a strikethrough on the amount so
-                    // already-cleared milestones are visually distinct.
                     const dObj = new Date(m.date);
                     const daysUntil = Math.round((dObj - new Date()) / 86400000);
                     const isUpcoming30 = m.status === 'pending' && daysUntil >= 0 && daysUntil <= 30;
-                    const borderColor = isUpcoming30 ? theme.accent : c2 + '33';
-                    const bgColor = isUpcoming30 ? theme.accent + '1F' : c2 + '14';
+                    const rowBg = isUpcoming30 ? theme.accent + '14' : 'transparent';
+                    const rowBorder = isUpcoming30 ? theme.accent + '55' : 'transparent';
+                    const cell = { padding: '6px 8px', background: rowBg, borderTop: `1px solid ${rowBorder}`, borderBottom: `1px solid ${rowBorder}` };
+                    const firstCell = { ...cell, borderLeft: `1px solid ${rowBorder}`, borderTopLeftRadius: 6, borderBottomLeftRadius: 6 };
+                    const lastCell  = { ...cell, borderRight: `1px solid ${rowBorder}`, borderTopRightRadius: 6, borderBottomRightRadius: 6 };
                     return (
-                      <div key={i} style={{
-                        flex: '1 1 80px', minWidth: 80, padding: '6px 8px',
-                        background: bgColor, borderRadius: 6,
-                        border: `1px solid ${borderColor}`,
-                        boxShadow: isUpcoming30 ? `inset 0 0 0 1px ${theme.accent}55` : 'none',
-                      }}>
-                        <div style={{ fontSize: 10, color: theme.inkMuted, textTransform: 'uppercase', fontWeight: 600, letterSpacing: 0.3 }}>{m.label}</div>
-                        <div style={{ fontSize: 11, color: theme.inkMuted, fontVariantNumeric: 'tabular-nums', marginTop: 1 }}>{CABT_fmtDate(m.date)}</div>
+                      <React.Fragment key={i}>
+                        <div style={{ ...firstCell, fontSize: 11, fontWeight: 700, color: theme.ink, textTransform: 'uppercase', letterSpacing: 0.3 }}>{m.label}</div>
+                        <div style={{ ...cell, fontSize: 12, color: theme.inkSoft, fontVariantNumeric: 'tabular-nums' }}>{CABT_fmtDate(m.date)}</div>
                         <div style={{
-                          fontSize: 13, fontWeight: 700, color: theme.ink, fontVariantNumeric: 'tabular-nums',
+                          ...cell,
+                          fontSize: 13, fontWeight: 700, color: theme.ink,
+                          textAlign: 'right', fontVariantNumeric: 'tabular-nums',
                           textDecoration: m.status === 'paid' ? 'line-through' : 'none',
                           textDecorationColor: m.status === 'paid' ? c2 : 'currentColor',
                           opacity: m.status === 'paid' ? 0.7 : 1,
                         }}>{CABT_fmtMoney(m.amount)}</div>
-                        <div style={{ fontSize: 10, color: c2, textTransform: 'capitalize', fontWeight: 600 }}>
-                          {m.status}{isUpcoming30 && ' · soon'}
+                        <div style={{ ...lastCell, textAlign: 'right' }}>
+                          <span style={{
+                            display: 'inline-block', padding: '2px 8px', borderRadius: 999,
+                            background: c2 + '1F', color: c2,
+                            border: `1px solid ${c2}55`,
+                            fontSize: 10, fontWeight: 700, textTransform: 'capitalize', letterSpacing: 0.3,
+                          }}>
+                            {m.status}{isUpcoming30 && ' · soon'}
+                          </span>
                         </div>
-                      </div>
+                      </React.Fragment>
                     );
                   })}
                 </div>
