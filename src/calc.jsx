@@ -428,19 +428,42 @@ function caScorecard(ca, state) {
   // the quarter started (new signups during the quarter don't count).
   // Cancellations during the quarter that count_against_ca subtract from
   // numerator. Score: linear from cliff (default 0.97) to 1.0.
+  //
+  // TKT-12.2 (Bobby 2026-05-06): clients with any flagged_inactive=true row
+  // in the quarter (across monthly_metrics, weekly_metrics, monthly_checkins,
+  // weekly_checkins) are treated as "at risk" for retention — even if no
+  // cancel_date is set. The CA explicitly marked the period inactive, so it
+  // counts against retention just like a counts_against_ca cancellation.
   const eligibleAtStart = allClients.filter(c =>
     c.assignedCA === ca.id &&
     isEligibleTier(c) &&
     c.signDate && new Date(c.signDate) < qStart
   );
-  const cancelledThisQuarter = eligibleAtStart.filter(c =>
-    c.cancelDate &&
-    new Date(c.cancelDate) >= qStart && new Date(c.cancelDate) <= qEnd &&
-    cancelCountsAgainstCA(c, cancelReasonsByCode)
-  );
+  const flaggedInactiveIds = new Set();
+  const allLogTables = [
+    state.monthlyMetrics, state.weeklyMetrics,
+    state.monthlyCheckins, state.weeklyCheckins,
+  ];
+  allLogTables.forEach((rows) => {
+    (rows || []).forEach((r) => {
+      if (!r || !r.flaggedInactive) return;
+      const periodIso = r.month || r.weekStart;
+      if (!periodIso) return;
+      const d = new Date(periodIso);
+      if (d >= qStart && d <= qEnd) flaggedInactiveIds.add(r.clientId);
+    });
+  });
+  const atRisk = eligibleAtStart.filter((c) => {
+    const cancelled = c.cancelDate
+      && new Date(c.cancelDate) >= qStart
+      && new Date(c.cancelDate) <= qEnd
+      && cancelCountsAgainstCA(c, cancelReasonsByCode);
+    return cancelled || flaggedInactiveIds.has(c.id);
+  });
+  const cancelledThisQuarter = atRisk; // legacy alias for the rest of the function
   const denom = eligibleAtStart.length;
   const retainedRate = denom > 0
-    ? (denom - cancelledThisQuarter.length) / denom
+    ? (denom - atRisk.length) / denom
     : null;
   const cliff = _n(cfgGet(cfg, 'retentionCliff', 0.97));
   let retention = null;

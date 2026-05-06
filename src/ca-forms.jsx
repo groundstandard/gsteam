@@ -99,29 +99,34 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
     ? (editing.clientGrossRevenue || editing.clientMRR || '')
     : (lastForInit?.clientGrossRevenue || lastForInit?.clientMRR || '');
 
-  const [form, setForm] = React.useState(editing ? { ...editing, totalRevenue: initialRevenue } : {
-    clientId: initialClient,
-    cadence: initialCadence,
-    // Use the right period field for this cadence; the other stays empty.
-    month:     initialCadence === 'monthly' ? CABT_currentMonthIso() : '',
-    weekStart: initialCadence === 'weekly'  ? isoMondayOf()          : '',
-    totalRevenue: initialRevenue,
-    leadCost: lastForInit?.leadCost ?? '',
-    adSpend: lastForInit?.adSpend ?? '',
-    leadsGenerated: '',
-    apptsBooked: '',
-    leadsShowed: '',
-    leadsSigned: '',
-    totalStudentsStart: lastForInit?.totalStudentsStart ?? '',
-    studentsCancelled: '',
-    notes: '',
-  });
+  const [form, setForm] = React.useState(editing
+    ? { ...editing, totalRevenue: initialRevenue, stillActive: !editing.flaggedInactive }
+    : {
+        clientId: initialClient,
+        cadence: initialCadence,
+        // Use the right period field for this cadence; the other stays empty.
+        month:     initialCadence === 'monthly' ? CABT_currentMonthIso() : '',
+        weekStart: initialCadence === 'weekly'  ? isoMondayOf()          : '',
+        totalRevenue: initialRevenue,
+        leadCost: lastForInit?.leadCost ?? '',
+        adSpend: lastForInit?.adSpend ?? '',
+        leadsGenerated: '',
+        apptsBooked: '',
+        leadsShowed: '',
+        leadsSigned: '',
+        totalStudentsStart: lastForInit?.totalStudentsStart ?? '',
+        studentsCancelled: '',
+        // TKT-12.2 — "Is account still active this period?" — default true.
+        // Unchecking sets flagged_inactive on the row → retention drops to 0.
+        stillActive: true,
+        notes: '',
+      });
 
   // Re-derive cadence whenever client changes; the form's behavior depends on it.
   const selectedClient = state.clients.find(c => c.id === form.clientId);
   const activeCadence = (editingKind || form.cadence || selectedClient?.loggingCadence || 'monthly');
 
-  const [open, setOpen] = React.useState({ ident: true, money: true, funnel: false, attrition: false, notes: false });
+  const [open, setOpen] = React.useState({ ident: true, money: true, funnel: false, attrition: false, active: true, notes: false });
   const [errors, setErrors] = React.useState({});
   const [warnings, setWarnings] = React.useState({});
   const [duplicateBlock, setDuplicateBlock] = React.useState(null);
@@ -231,6 +236,7 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
       leadsSigned: num(form.leadsSigned),
       totalStudentsStart: num(form.totalStudentsStart),
       studentsCancelled: num(form.studentsCancelled),
+      flaggedInactive: form.stillActive === false,
       notes: form.notes || '',
     };
     onSubmit(row, !!editing, activeCadence);
@@ -243,6 +249,7 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
     money: form.totalRevenue !== '' && form.adSpend !== '',
     funnel: ['leadsGenerated','apptsBooked','leadsShowed','leadsSigned'].every(k => form[k] !== ''),
     attrition: form.totalStudentsStart !== '' && form.studentsCancelled !== '',
+    active: typeof form.stillActive === 'boolean',
   };
 
   if (duplicateBlock) {
@@ -369,6 +376,34 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
         <Field label="Students cancelled" theme={theme}>
           <Input type="number" inputmode="numeric" value={form.studentsCancelled} onChange={(v) => updateForm('studentsCancelled', v)} theme={theme} />
         </Field>
+      </SectionCard>
+
+      {/* TKT-12.2 — required active-status check. Default checked. Unchecking
+          flips flagged_inactive on the row → retention contribution drops to
+          0 for the quarter (even if cancel_date is null) and admins are
+          notified. */}
+      <SectionCard {...sectionProps('active')} title="Account status"
+        doneLabel={form.stillActive === false ? 'Marked inactive · admin will be notified' : 'Active'}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 0', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={form.stillActive !== false}
+            onChange={(e) => updateForm('stillActive', e.target.checked)}
+            style={{ width: 18, height: 18, marginTop: 2, flexShrink: 0, accentColor: theme.accent }}
+          />
+          <span style={{ fontSize: 14, color: theme.ink, lineHeight: 1.4 }}>
+            <strong>This account is still active and receiving service this period.</strong>
+          </span>
+        </label>
+        {form.stillActive === false && (
+          <div style={{
+            marginTop: 8, padding: '10px 12px', borderRadius: 8,
+            background: 'rgba(255, 178, 56, 0.12)', border: '1px solid rgba(255, 178, 56, 0.35)',
+            fontSize: 12, color: theme.inkSoft, lineHeight: 1.45,
+          }}>
+            Marking this period inactive will lower your Retention score for this client until they're either re-confirmed active or formally cancelled. Admin will be notified.
+          </div>
+        )}
       </SectionCard>
 
       <SectionCard {...sectionProps('notes')} title="Notes (optional)"
@@ -641,6 +676,8 @@ function LogCheckinForm({ state, ca, theme, presetClientId, navigate, onSubmit }
     win: '',
     accountAction: '',
     agencyAction: '',
+    // TKT-12.2 — required active-status check on every check-in.
+    stillActive: true,
     notes: '',
   });
   const [errors, setErrors] = React.useState({});
@@ -687,6 +724,7 @@ function LogCheckinForm({ state, ca, theme, presetClientId, navigate, onSubmit }
       win: form.win || null,
       accountAction: form.accountAction || null,
       agencyAction: form.agencyAction || null,
+      flaggedInactive: form.stillActive === false,
       notes: form.notes || null,
     };
     onSubmit(row, activeCadence);
@@ -743,6 +781,32 @@ function LogCheckinForm({ state, ca, theme, presetClientId, navigate, onSubmit }
         <Field label="Agency-side action" hint="What you / the agency need to do next" theme={theme}>
           <Textarea value={form.agencyAction} onChange={(v) => updateForm('agencyAction', v)} rows={3} placeholder="What's our next move?" theme={theme}/>
         </Field>
+      </Card>
+
+      {/* TKT-12.2 — required active-status check on every check-in. Default
+          checked. Unchecking flags the row as inactive → drops the client's
+          retention contribution to 0 for the quarter. */}
+      <Card theme={theme} padding={14}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '4px 0', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={form.stillActive !== false}
+            onChange={(e) => updateForm('stillActive', e.target.checked)}
+            style={{ width: 18, height: 18, marginTop: 2, flexShrink: 0, accentColor: theme.accent }}
+          />
+          <span style={{ fontSize: 14, color: theme.ink, lineHeight: 1.4 }}>
+            <strong>This account is still active and receiving service this period.</strong>
+          </span>
+        </label>
+        {form.stillActive === false && (
+          <div style={{
+            marginTop: 8, padding: '10px 12px', borderRadius: 8,
+            background: 'rgba(255, 178, 56, 0.12)', border: '1px solid rgba(255, 178, 56, 0.35)',
+            fontSize: 12, color: theme.inkSoft, lineHeight: 1.45,
+          }}>
+            Marking this period inactive will lower your Retention score for this client until they're either re-confirmed active or formally cancelled. Admin will be notified.
+          </div>
+        )}
       </Card>
 
       <Card theme={theme} padding={14}>
