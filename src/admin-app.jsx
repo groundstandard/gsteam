@@ -199,6 +199,8 @@ function AdminRoster({ state, theme, onReload, onToast }) {
           theme={theme}
           kind={editing.kind}
           row={editing.row}
+          callerRole={callerRole}
+          callerId={state.me?.id}
           onClose={closeEdit}
           onSuccess={(msg) => {
             closeEdit();
@@ -524,9 +526,15 @@ const EDIT_ERROR_COPY = {
   ca_roster_update_failed: 'Could not update CA roster row.',
   sales_roster_update_failed: 'Could not update Sales roster row.',
   password_reset_failed: 'Could not reset the password.',
+  // TKT-12.9 — hard-delete error copy
+  owner_only: 'Only the owner can hard-delete a teammate.',
+  self_delete_blocked: 'You can\'t delete your own account.',
+  ca_delete_blocked: 'This CA still has assigned clients or metrics. Reassign those before hard-deleting.',
+  sales_delete_blocked: 'This rep still has linked contracts or adjustments. Reassign those before hard-deleting.',
+  auth_delete_failed: 'Could not remove the auth account.',
 };
 
-function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
+function EmployeeDetailModal({ theme, kind, row, callerRole, callerId, onClose, onSuccess }) {
   // `kind` is 'ca' or 'sales'. `row` is the camelCased state.cas[i] or state.sales[i] entry.
   // We need profileId (the auth.users id) to address the EF. If the row was
   // seeded without profile_id, fall back to looking up by email.
@@ -553,8 +561,14 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
   const isCa    = kind === 'ca';
   const isSales = kind === 'sales';
 
-  // Mode: 'edit' = profile fields, 'reset' = password reset confirmation
+  // Mode: 'edit' = profile fields, 'reset' = password reset confirmation,
+  // 'delete' = TKT-12.9 owner-only hard-delete with typed email confirmation
   const [mode, setMode] = React.useState('edit');
+  // TKT-12.9 — hard-delete UX state
+  const isOwner = callerRole === 'owner';
+  const isSelf = !!(callerId && (row.profileId === callerId || userId === callerId));
+  const [confirmEmail, setConfirmEmail] = React.useState('');
+  const confirmEmailMatches = !!row.email && confirmEmail.trim().toLowerCase() === row.email.trim().toLowerCase();
 
   // ── edit-form state ─────────────────────────────────────────────
   const [displayName, setDisplayName] = React.useState(row.name || '');
@@ -714,6 +728,30 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
     }
   };
 
+  // TKT-12.9 — hard-delete submit. Owner-only (also enforced server-side).
+  // Refuses self-delete client-side as a fast-path; the Edge Function also
+  // rejects to handle direct API callers. Routes to the EF's hard_delete
+  // branch which NULLs out created_by on metric/event/check-in tables and
+  // captures full prior state in audit_log.
+  const submitDelete = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    setErrMsg(null);
+    if (!isOwner) return setErrMsg('Only the owner can hard-delete a teammate.');
+    if (isSelf) return setErrMsg('You can\'t delete your own account.');
+    if (resolvingId) return setErrMsg('Looking up teammate… try again in a moment.');
+    if (!userId) return setErrMsg(`No auth account is linked to ${row.email || 'this teammate'}.`);
+    if (!confirmEmailMatches) return setErrMsg('Type the email exactly to confirm.');
+    setSubmitting(true);
+    try {
+      await CABT_editUser({ action: 'hard_delete', userId });
+      onSuccess('Hard-deleted ' + (row.name || row.email || 'teammate'));
+    } catch (err) {
+      const code = err && err.message;
+      setErrMsg(EDIT_ERROR_COPY[code] || (err.detail ? `${code}: ${err.detail}` : code) || 'Delete failed.');
+      setSubmitting(false);
+    }
+  };
+
   const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
   return (
     <div
@@ -766,7 +804,9 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
           }}>
             {mode === 'reset'
               ? (userId ? 'Reset password' : 'Set initial password')
-              : 'Edit teammate'}
+              : mode === 'delete'
+                ? 'Hard-delete teammate'
+                : 'Edit teammate'}
           </div>
           <button
             onClick={onClose}
@@ -875,6 +915,27 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
               {userId ? 'Reset password…' : 'Set initial password…'}
             </Button>
 
+            {/* TKT-12.9 — hard-delete entry point. Owner-only; hidden for
+                admins / integrators. Self-delete is also blocked here as a
+                fast-path (server enforces too). */}
+            {isOwner && !isSelf && (
+              <button
+                type="button"
+                onClick={() => { setErrMsg(null); setConfirmEmail(''); setMode('delete'); }}
+                style={{
+                  marginTop: 4,
+                  padding: '10px 14px', height: 44,
+                  background: 'transparent', color: STATUS.red,
+                  border: `1px solid ${STATUS.red}55`,
+                  borderRadius: 10, fontSize: 13, fontWeight: 700,
+                  fontFamily: 'inherit', cursor: 'pointer',
+                  letterSpacing: 0.2,
+                }}
+              >
+                Delete teammate (permanent)…
+              </button>
+            )}
+
             {errMsg && (
               <div style={{
                 background: STATUS.red + '15', color: STATUS.red, border: `1px solid ${STATUS.red}33`,
@@ -929,6 +990,64 @@ function EmployeeDetailModal({ theme, kind, row, onClose, onSuccess }) {
                   ? (userId ? 'Resetting…' : 'Creating…')
                   : (userId ? 'Set new password' : 'Create account & set password')}
               </Button>
+            </div>
+          </form>
+        )}
+
+        {/* TKT-12.9 — typed-confirmation hard-delete form. Submit blocked
+            until the user types the teammate's email verbatim. */}
+        {mode === 'delete' && (
+          <form onSubmit={submitDelete} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{
+              padding: '12px 14px',
+              background: STATUS.red + '12',
+              border: `1px solid ${STATUS.red}33`,
+              borderRadius: theme.radius - 6,
+              color: STATUS.red, fontSize: 13, lineHeight: 1.5,
+            }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>This is permanent.</div>
+              <div style={{ color: theme.ink, fontWeight: 500 }}>
+                The auth account, profile row, {isCa ? 'CA roster row' : 'sales-team roster row'}, and push subscriptions for <strong>{row.name || row.email}</strong> will be removed. Their authored metric / event / check-in rows are kept (their <code>created_by</code> is set to NULL). Use the audit log to recover the prior state if this was a mistake.
+              </div>
+            </div>
+            <Field label="Type the email to confirm" required hint={`Must match exactly: ${row.email}`} theme={theme}>
+              <Input
+                value={confirmEmail}
+                onChange={setConfirmEmail}
+                placeholder={row.email}
+                theme={theme}
+                autoFocus
+              />
+            </Field>
+
+            {errMsg && (
+              <div style={{
+                background: STATUS.red + '15', color: STATUS.red, border: `1px solid ${STATUS.red}33`,
+                borderRadius: theme.radius - 6, padding: '10px 12px', fontSize: 13, lineHeight: 1.4,
+              }}>{errMsg}</div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+              <Button theme={theme} variant="secondary" onClick={() => { setErrMsg(null); setMode('edit'); }} disabled={submitting}>
+                Back
+              </Button>
+              <button
+                type="submit"
+                disabled={submitting || !confirmEmailMatches}
+                onClick={submitDelete}
+                style={{
+                  flex: 1,
+                  padding: '12px 16px', height: 48,
+                  background: confirmEmailMatches && !submitting ? STATUS.red : (theme.bgElev || theme.rule),
+                  color: confirmEmailMatches && !submitting ? '#fff' : theme.inkMuted,
+                  border: 'none', borderRadius: 12,
+                  fontSize: 14, fontWeight: 700, fontFamily: 'inherit',
+                  cursor: confirmEmailMatches && !submitting ? 'pointer' : 'not-allowed',
+                  letterSpacing: 0.2,
+                }}
+              >
+                {submitting ? 'Deleting…' : 'Permanently delete'}
+              </button>
             </div>
           </form>
         )}
