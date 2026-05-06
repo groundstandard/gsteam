@@ -1656,11 +1656,14 @@ function AdminMore({ theme, navigate, profile, onSignOut }) {
     { name: 'edits',     icon: 'edit',  label: 'Edit Requests',   desc: 'Approve protected-field edits past grace' },
     { name: 'reviews',   icon: 'star',  label: 'Reviews Inbox',   desc: 'Match incoming reviews to clients' },
     { name: 'pending-clients', icon: 'cash', label: 'Pending Clients', desc: 'Approve new Stripe customers' },
+    // TKT-12.7 — Formula Inspector + Formula Configurator are paired tools
+    // (Inspector reads the math, Configurator edits the thresholds), so they
+    // sit next to each other with Inspector first, Configurator second.
     { name: 'formula-inspector', icon: 'chart', label: 'Formula Inspector', desc: 'See exactly how every score is computed' },
+    { name: 'formula-configurator', icon: 'cog', label: 'Formula Configurator', desc: 'Edit every scoring threshold (MRR target, lead cost bands, attrition floors, retention cliff, pot %)' },
     { name: 'bulk-cadence', icon: 'cal', label: 'Bulk cadence', desc: 'Set weekly/monthly for many clients at once' },
     { name: 'questions', icon: 'alert', label: 'Open Questions',  desc: 'Decisions pending leadership' },
     { name: 'audit-log', icon: 'shield', label: 'Audit Log',       desc: 'Read-only history of changes' },
-    { name: 'config',    icon: 'cog',   label: 'Config — adjust formulas', desc: 'Edit every scoring threshold (MRR target, lead cost bands, attrition floors, retention cliff, pot %)' },
     { name: 'roster',    icon: 'user',  label: 'Roster',          desc: 'CAs, Account Managers, Relationship Dev Reps' },
   ];
   return (

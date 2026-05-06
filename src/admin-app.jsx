@@ -89,7 +89,7 @@ function AdminConfig({ state, theme, onUpdate }) {
   return (
     <div style={{ padding: '8px 16px 120px', display: 'flex', flexDirection: 'column', gap: 14 }}>
       <Banner tone="info" icon="alert" theme={theme}>
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>This is where you adjust scoring formulas.</div>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>Formula Configurator — every scoring threshold, in one place.</div>
         <div style={{ fontSize: 12, color: theme.inkSoft, lineHeight: 1.5 }}>
           Every threshold below feeds the scoring engine for Performance / Retention / Growth buckets. Change any value, tap <strong>Save config</strong>, and the new threshold takes effect across all open sessions within ~1 second (no reload needed). Cross-check your changes against the legacy CA Bonus Tracker Sheet anytime via <strong>More → Formula Inspector</strong>.
         </div>

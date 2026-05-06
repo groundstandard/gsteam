@@ -447,11 +447,11 @@ function App() {
           values: cfg, updated_at: new Date().toISOString(),
         }).eq('id', 1);
         if (error) throw error;
-        showToast('Config saved');
+        showToast('Formula Configurator saved');
         navigate('back');
       } catch (e) { showToast('Save failed: ' + (e?.message || 'unknown')); console.error('[updateConfig]', e); }
     } else {
-      showToast('Config saved');
+      showToast('Formula Configurator saved');
       navigate('back');
     }
   };
@@ -532,7 +532,7 @@ function App() {
       'add-client': 'Add Client',
       'pending-clients': 'Pending Clients',
       'questions': 'Open Questions',
-      'config': 'Config',
+      'formula-configurator': 'Formula Configurator',
       'roster': 'Roster',
       'more': 'More',
     })[r.name] || 'Admin';
@@ -586,7 +586,7 @@ function App() {
       case 'audit-log':   return <AdminAuditLog state={state} theme={theme}/>;
       case 'formula-inspector': return <AdminFormulaInspector state={state} theme={theme} navigate={navigate}/>;
       case 'bulk-cadence': return <AdminBulkCadence state={state} theme={theme} navigate={navigate}/>;
-      case 'config':      return <AdminConfig state={state} theme={theme} onUpdate={updateConfig}/>;
+      case 'formula-configurator': return <AdminConfig state={state} theme={theme} onUpdate={updateConfig}/>;
       case 'roster':      return <AdminRoster state={state} theme={theme} onReload={reloadLive} onToast={showToast}/>;
       case 'more':        return <AdminMore theme={theme} navigate={navigate} profile={authedProfile} onSignOut={signOutHandler}/>;
       default: return null;
