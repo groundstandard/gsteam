@@ -655,7 +655,7 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
       leadsGenerated: null, apptsBooked: null, leadsShowed: null, leadsSigned: null,
       studentsStart: null, studentsAcquired: null, studentsCancelled: null,
       surveyScore: null,
-      notes: `${e.eventType}${e.notes ? ' · ' + e.notes : ''}${e.saleTotal > 0 ? ' · sale ' + CABT_fmtMoney(e.saleTotal) : ''}`,
+      notes: `${e.eventType || 'Event'}${e.notes ? ' · ' + e.notes : ''}${e.saleTotal > 0 ? ' · sale ' + CABT_fmtMoney(e.saleTotal) : ''}`,
       flaggedInactive: false,
       _payload: e,
     }));
@@ -789,7 +789,7 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
   const COLUMNS = [
     { id: 'date',     label: 'Period',    group: 'When',      align: 'left',  sortKey: 'sortDate',
       render: (r) => <>
-        <span style={{ fontWeight: 700 }}>{r._isGroup ? r.groupLabel : (cadence === 'all' ? CABT_fmtDate(r.date) : (cadence === 'week' ? `Week of ${CABT_fmtDate(r.date)}` : CABT_fmtMonth(r.date)))}</span>
+        <span style={{ fontWeight: 700 }}>{r._isGroup ? r.groupLabel : (cadence === 'all' ? CABT_fmtDate(r.date) : (cadence === 'week' ? `Week of ${CABT_fmtDate(isoMondayOf(r.date))}` : CABT_fmtMonth(r.date)))}</span>
         {r.flaggedInactive && (
           <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, letterSpacing: 0.4, padding: '2px 6px', borderRadius: 8, background: 'rgba(255,178,56,0.18)', color: '#8C5A00', textTransform: 'uppercase', border: '1px solid rgba(255,178,56,0.4)' }}>flagged</span>
         )}
