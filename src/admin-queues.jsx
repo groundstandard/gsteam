@@ -96,7 +96,12 @@ function EditReqCard({ req, theme, onApprove, onReject, busy }) {
         <Pill tone={tone} theme={theme}>{req.status}</Pill>
       </div>
       <div style={{ fontSize: 12, color: theme.inkMuted, marginBottom: 10 }}>
-        Requested by {req.requestedByName || req.requestedBy} · {CABT_fmtDate(req.createdAt || CABT_todayIso())}
+        {/* Bobby 2026-05-11: never show raw UUIDs in the UI — resolve the
+            requester's auth uuid to their profile display_name or email.
+            Falls back to "Unknown" if the join didn't find a profile row
+            (rare — orphaned request). */}
+        Requested by {req.requester?.displayName || req.requester?.email || req.requestedByName || 'Unknown'}
+        · {CABT_fmtDate(req.requestedAt || req.createdAt || CABT_todayIso())}
       </div>
 
       <div style={{ background: theme.bg, borderRadius: 8, padding: 10, marginBottom: 10 }}>

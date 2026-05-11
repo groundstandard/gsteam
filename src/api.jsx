@@ -537,7 +537,13 @@ async function loadStateSupabase() {
     // Admin queues — Edit Requests + Reviews Inbox (deferred to v2 per PRD,
     // but loading them now so the screens show real data instead of empty
     // when the tables exist).
-    sb.from('edit_requests').select('*').order('requested_at', { ascending: false }).then(r => r, () => ({ data: [] })),
+    // Bobby 2026-05-11: don't surface raw UUIDs in the Edit Requests UI.
+    // Join with profiles so the requester's display_name + email are
+    // available for rendering instead of falling back to the raw uuid.
+    sb.from('edit_requests')
+      .select('*, requester:profiles!requested_by(display_name, email)')
+      .order('requested_at', { ascending: false })
+      .then(r => r, () => ({ data: [] })),
     sb.from('reviews').select('*').order('reviewed_at', { ascending: false }).then(r => r, () => ({ data: [] })),
   ]);
 
