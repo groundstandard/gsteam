@@ -532,6 +532,12 @@ const EDIT_ERROR_COPY = {
   ca_delete_blocked: 'This CA still has assigned clients or metrics. Reassign those before hard-deleting.',
   sales_delete_blocked: 'This rep still has linked contracts or adjustments. Reassign those before hard-deleting.',
   auth_delete_failed: 'Could not remove the auth account.',
+  // Bobby 2026-05-11 follow-up — roster-only delete (no auth account linked)
+  roster_id_required: 'Couldn\'t identify the roster entry.',
+  bad_roster_kind: 'Internal: bad roster kind.',
+  roster_not_found: 'Roster entry not found.',
+  roster_lookup_failed: 'Could not look up the roster entry.',
+  has_auth_account: 'This teammate has a signed-in account — full delete is required.',
 };
 
 function EmployeeDetailModal({ theme, kind, row, callerRole, callerId, onClose, onSuccess }) {
@@ -730,20 +736,33 @@ function EmployeeDetailModal({ theme, kind, row, callerRole, callerId, onClose, 
 
   // TKT-12.9 — hard-delete submit. Owner-only (also enforced server-side).
   // Refuses self-delete client-side as a fast-path; the Edge Function also
-  // rejects to handle direct API callers. Routes to the EF's hard_delete
-  // branch which NULLs out created_by on metric/event/check-in tables and
-  // captures full prior state in audit_log.
+  // rejects to handle direct API callers. Two paths:
+  //   • userId present (teammate signed in at least once → has profile)
+  //     → action: 'hard_delete' — auth + profile + roster + push_subs
+  //   • userId null (teammate added to roster but never signed in)
+  //     → action: 'hard_delete_roster_only' — just removes the cas /
+  //       sales_team row. No auth or profile to delete.
+  // Bobby 2026-05-11 hit the second case trying to delete Alice (CA-02
+  // had never signed in) and the modal blocked her with "No auth account
+  // is linked" — fixed by routing to the roster-only path automatically.
   const submitDelete = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     setErrMsg(null);
     if (!isOwner) return setErrMsg('Only the owner can hard-delete a teammate.');
     if (isSelf) return setErrMsg('You can\'t delete your own account.');
     if (resolvingId) return setErrMsg('Looking up teammate… try again in a moment.');
-    if (!userId) return setErrMsg(`No auth account is linked to ${row.email || 'this teammate'}.`);
     if (!confirmEmailMatches) return setErrMsg('Type the email exactly to confirm.');
     setSubmitting(true);
     try {
-      await CABT_editUser({ action: 'hard_delete', userId });
+      if (userId) {
+        await CABT_editUser({ action: 'hard_delete', userId });
+      } else {
+        await CABT_editUser({
+          action: 'hard_delete_roster_only',
+          rosterId: row.id,
+          rosterKind: kind, // 'ca' or 'sales'
+        });
+      }
       onSuccess('Hard-deleted ' + (row.name || row.email || 'teammate'));
     } catch (err) {
       const code = err && err.message;
@@ -1007,7 +1026,11 @@ function EmployeeDetailModal({ theme, kind, row, callerRole, callerId, onClose, 
             }}>
               <div style={{ fontWeight: 700, marginBottom: 4 }}>This is permanent.</div>
               <div style={{ color: theme.ink, fontWeight: 500 }}>
-                The auth account, profile row, {isCa ? 'CA roster row' : 'sales-team roster row'}, and push subscriptions for <strong>{row.name || row.email}</strong> will be removed. Their authored metric / event / check-in rows are kept (their <code>created_by</code> is set to NULL). Use the audit log to recover the prior state if this was a mistake.
+                {userId ? (
+                  <>The auth account, profile row, {isCa ? 'CA roster row' : 'sales-team roster row'}, and push subscriptions for <strong>{row.name || row.email}</strong> will be removed. Their authored metric / event / check-in rows are kept (their <code>created_by</code> is set to NULL). Use the audit log to recover the prior state if this was a mistake.</>
+                ) : (
+                  <>Only the {isCa ? 'CA roster row' : 'sales-team roster row'} for <strong>{row.name || row.email}</strong> will be removed — no auth account is linked (this teammate was added to the roster but never signed in). Use the audit log to recover the prior state if this was a mistake.</>
+                )}
               </div>
             </div>
             <Field label="Type the email to confirm" required hint={`Must match exactly: ${row.email}`} theme={theme}>
