@@ -708,4 +708,9 @@ Object.assign(window, {
   CABT_ROLE_LABELS, CABT_ROLE_SHORT, CABT_SALES_ROLE_LABELS, CABT_SALES_ROLE_SHORT,
   CABT_roleLabel, CABT_roleShort, CABT_inviteUser, CABT_editUser, CABT_findUserIdByEmail,
   CABT_pushPermissionState, CABT_pushSubscribe, CABT_pushUnsubscribe, CABT_pushIsSubscribed,
+  // Exposed for app-shell's requestEdit so edit_requests field_changes are
+  // written with the same snake_case column names the apply trigger expects
+  // (Bobby 2026-05-12: approvals silently failed because camelCase keys
+  // didn't match real columns).
+  camelToSnake,
 });

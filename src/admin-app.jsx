@@ -12,8 +12,10 @@ function AdminApprovals({ state, theme, navigate, onApprove, onReject, onAssignC
   // in here so the Owner sees every decision-needed item in one place.
   const pendingEditRequests = (state.editRequests || []).filter(r => r.status === 'pending');
   const [editBusy, setEditBusy] = React.useState(null);
+  const [editErr, setEditErr] = React.useState(null);
   const decideEditRequest = async (req, status) => {
     setEditBusy(req.id);
+    setEditErr(null);
     if (CABT_getApiMode() === 'supabase') {
       try {
         if (status === 'approved') {
@@ -22,7 +24,13 @@ function AdminApprovals({ state, theme, navigate, onApprove, onReject, onAssignC
           const sb = await CABT_sb();
           await sb.from('edit_requests').update({ status: 'rejected' }).eq('id', req.id);
         }
-      } catch (e) { console.error('[approve edit request]', e); }
+      } catch (e) {
+        // Bobby 2026-05-12: silent catch hid the real failure. Surface the
+        // error to the UI so the admin sees something happened instead of
+        // clicking Approve and watching nothing change.
+        console.error('[edit request decision]', e);
+        setEditErr({ id: req.id, message: e?.message || String(e) });
+      }
     }
     setEditBusy(null);
   };
@@ -46,6 +54,16 @@ function AdminApprovals({ state, theme, navigate, onApprove, onReject, onAssignC
         )}
         {pendingEditRequests.length > 0 && typeof window.EditReqCard === 'function' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {editErr && (
+              <div style={{
+                background: STATUS.red + '15', color: STATUS.red,
+                border: `1px solid ${STATUS.red}33`,
+                borderRadius: theme.radius - 6 || 8, padding: '10px 14px',
+                fontSize: 13, lineHeight: 1.45,
+              }}>
+                <strong>Approve/Reject failed.</strong> {editErr.message}
+              </div>
+            )}
             {pendingEditRequests.map(r => (
               <window.EditReqCard
                 key={r.id}

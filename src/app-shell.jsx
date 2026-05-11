@@ -266,6 +266,14 @@ function App() {
   const isAdminAuth = ['owner', 'admin'].includes(authedProfile?.role);
   const computeFieldDiff = (original, next) => {
     if (!original) return {};
+    // Bobby 2026-05-12: field_changes JSONB MUST use snake_case column names
+    // because fn_apply_edit_request feeds them straight into a dynamic SQL
+    // `UPDATE %I SET %I = %L`. Storing camelCase keys (clientMRR, apptsBooked)
+    // made the trigger generate UPDATE statements against columns that don't
+    // exist — Postgres errored silently inside the BEFORE-UPDATE, rolling
+    // back the approve. Convert keys here so the diff matches real columns.
+    const c2s = (typeof window !== 'undefined' && window.camelToSnake)
+      || ((s) => s.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase()));
     const changed = {};
     Object.keys(next).forEach((k) => {
       // Skip identity / metadata keys — never propose those as edits.
@@ -277,7 +285,8 @@ function App() {
       if ((a == null || a === '') && (b == null || b === '')) return;
       if (typeof a === 'number' && typeof b === 'string' && Number(b) === a) return;
       if (typeof b === 'number' && typeof a === 'string' && Number(a) === b) return;
-      changed[k] = { old: a == null ? null : a, new: b == null ? null : b };
+      const dbKey = c2s(k);
+      changed[dbKey] = { old: a == null ? null : a, new: b == null ? null : b };
     });
     return changed;
   };
