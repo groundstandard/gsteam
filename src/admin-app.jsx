@@ -51,6 +51,7 @@ function AdminApprovals({ state, theme, navigate, onApprove, onReject, onAssignC
                 key={r.id}
                 req={r}
                 theme={theme}
+                state={state}
                 onApprove={() => decideEditRequest(r, 'approved')}
                 onReject={() => decideEditRequest(r, 'rejected')}
                 busy={editBusy === r.id}

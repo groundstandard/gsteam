@@ -74,7 +74,7 @@ function AdminEditApprovals({ state, theme }) {
         </Card>
       )}
 
-      {filtered.map(r => <EditReqCard key={r.id} req={r} theme={theme}
+      {filtered.map(r => <EditReqCard key={r.id} req={r} theme={theme} state={state}
         onApprove={() => decide(r, 'approved')}
         onReject={() => decide(r, 'rejected')}
         busy={busy === r.id}
@@ -83,44 +83,154 @@ function AdminEditApprovals({ state, theme }) {
   );
 }
 
-function EditReqCard({ req, theme, onApprove, onReject, busy }) {
+// Bobby 2026-05-11 design polish — refined card layout, human-readable
+// table+field labels, resolved row context (client + month/week instead
+// of raw MM-... id), properly weighted Approve / Reject buttons that
+// work cleanly on desktop and mobile (44px+ tall touch targets, accent
+// fill for primary, outlined red for destructive).
+const EDIT_REQ_TABLE_LABELS = {
+  monthly_metrics:  'Monthly metrics',
+  weekly_metrics:   'Weekly metrics',
+  weekly_checkins:  'Weekly check-in',
+  monthly_checkins: 'Monthly check-in',
+  growth_events:    'Growth event',
+  surveys:          'Survey',
+  clients:          'Client',
+};
+const EDIT_REQ_STATE_KEY = {
+  monthly_metrics:  'monthlyMetrics',
+  weekly_metrics:   'weeklyMetrics',
+  weekly_checkins:  'weeklyCheckins',
+  monthly_checkins: 'monthlyCheckins',
+  growth_events:    'growthEvents',
+  surveys:          'surveys',
+  clients:          'clients',
+};
+const EDIT_REQ_FIELD_LABELS = {
+  clientMRR:           'Client MRR',
+  clientGrossRevenue:  'Gross revenue',
+  adSpend:             'Ad spend',
+  leadCost:            'Lead cost',
+  leadsGenerated:      'Leads generated',
+  apptsBooked:         'Appts booked',
+  leadsShowed:         'Leads showed',
+  leadsSigned:         'Leads signed',
+  appointmentsBooked:  'Appts booked',
+  appointmentsShowed:  'Leads showed',
+  appointmentsClosed:  'Leads signed',
+  studentsAcquired:    'Students acquired',
+  studentsCancelled:   'Students cancelled',
+  totalStudentsStart:  'Students at start',
+  flaggedInactive:     'Flagged inactive',
+  weekStart:           'Week starting',
+  eventType:           'Event type',
+  saleTotal:           'Sale total',
+  accountAction:       'Account action',
+  agencyAction:        'Agency action',
+};
+function editReqFieldLabel(key) {
+  if (EDIT_REQ_FIELD_LABELS[key]) return EDIT_REQ_FIELD_LABELS[key];
+  // Generic fallback: snake_case / camelCase → Title Case
+  const spaced = String(key).replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+function editReqResolveContext(req, state) {
+  if (!state || !req?.tableName) return null;
+  const stateKey = EDIT_REQ_STATE_KEY[req.tableName];
+  if (!stateKey) return null;
+  const row = (state[stateKey] || []).find(r => r.id === req.rowId);
+  if (!row) return null;
+  const client = (state.clients || []).find(c => c.id === row.clientId);
+  let period = '';
+  if (row.month)            period = CABT_fmtMonth(row.month);
+  else if (row.weekStart)   period = `Week of ${CABT_fmtDate(row.weekStart)}`;
+  else if (row.date)        period = CABT_fmtDate(row.date);
+  return { clientName: client?.name || null, period };
+}
+
+function EditReqCard({ req, theme, state, onApprove, onReject, busy }) {
   const isPending = req.status === 'pending';
   const tone = req.status === 'approved' ? 'green' : req.status === 'rejected' ? 'red' : 'yellow';
   const fields = Object.keys(req.fieldChanges || {});
+
+  const tableLabel = EDIT_REQ_TABLE_LABELS[req.tableName] || req.tableName;
+  const context = editReqResolveContext(req, state);
+  const requesterName = req.requester?.displayName
+    || req.requester?.email
+    || req.requestedByName
+    || 'Unknown';
+  const dateLabel = CABT_fmtDate(req.requestedAt || req.createdAt || CABT_todayIso());
+
+  // Red / green for the diff arrows. STATUS comes from ui.jsx.
+  const RED   = (typeof STATUS !== 'undefined' && STATUS.red)   || '#C62828';
+  const GREEN = (typeof STATUS !== 'undefined' && STATUS.green) || '#2E7D32';
+  const ACCENT    = theme.accent    || '#D7FF3D';
+  const ACCENT_INK = theme.accentInk || '#0B0E14';
+
   return (
-    <Card theme={theme} padding={14}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: theme.ink }}>
-          {req.tableName} · {req.rowId}
+    <Card theme={theme} padding={16}>
+      {/* Header: tableLabel + clientName + status pill */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 15, fontWeight: 700, color: theme.ink,
+            letterSpacing: -0.15, lineHeight: 1.3,
+            overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            {tableLabel}
+            {context?.clientName && (
+              <>
+                <span style={{ color: theme.inkMuted, fontWeight: 500, margin: '0 6px' }}>·</span>
+                <span style={{ color: theme.ink }}>{context.clientName}</span>
+              </>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: theme.inkMuted, lineHeight: 1.5, marginTop: 3 }}>
+            {context?.period && <><span style={{ color: theme.inkSoft, fontWeight: 600 }}>{context.period}</span> · </>}
+            Requested by <span style={{ color: theme.inkSoft, fontWeight: 600 }}>{requesterName}</span>
+            <span> · {dateLabel}</span>
+          </div>
         </div>
         <Pill tone={tone} theme={theme}>{req.status}</Pill>
       </div>
-      <div style={{ fontSize: 12, color: theme.inkMuted, marginBottom: 10 }}>
-        {/* Bobby 2026-05-11: never show raw UUIDs in the UI — resolve the
-            requester's auth uuid to their profile display_name or email.
-            Falls back to "Unknown" if the join didn't find a profile row
-            (rare — orphaned request). */}
-        Requested by {req.requester?.displayName || req.requester?.email || req.requestedByName || 'Unknown'}
-        · {CABT_fmtDate(req.requestedAt || req.createdAt || CABT_todayIso())}
+
+      {/* Small row id, low-emphasis for traceability */}
+      <div style={{
+        fontSize: 10, color: theme.inkMuted, fontFamily: theme.mono || 'monospace',
+        marginTop: 4, marginBottom: 12, opacity: 0.55, letterSpacing: 0.3,
+      }}>
+        {req.rowId}
       </div>
 
-      <div style={{ background: theme.bg, borderRadius: 8, padding: 10, marginBottom: 10 }}>
-        {fields.map(f => {
+      {/* Diff panel — labeled rows with line-through old / bold new */}
+      <div style={{
+        background: theme.bgSoft || 'rgba(255,255,255,0.04)',
+        border: `1px solid ${theme.rule}`,
+        borderRadius: 10, padding: '4px 12px',
+        marginBottom: 14,
+      }}>
+        {fields.map((f, i) => {
           const change = req.fieldChanges[f] || {};
-          // Accept both shapes — live trigger writes {old, new}; legacy seed
-          // and earlier client code used {from, to}. Phase 12 standardizes
-          // on {old, new} but this stays tolerant.
+          // Accept both {old, new} (live trigger) and {from, to} (legacy seed).
           const before = change.old !== undefined ? change.old : change.from;
           const after  = change.new !== undefined ? change.new : change.to;
+          const beforeStr = before == null || before === '' ? '—' : String(before);
+          const afterStr  = after  == null || after  === '' ? '—' : String(after);
           return (
-            <div key={f} style={{ display: 'flex', gap: 10, fontSize: 12, padding: '4px 0', alignItems: 'baseline' }}>
-              <div style={{ width: 130, color: theme.inkMuted, fontFamily: theme.mono, fontSize: 11 }}>{f}</div>
-              <div style={{ color: '#9B1B1B', textDecoration: 'line-through', fontFamily: theme.mono, fontSize: 12 }}>
-                {before == null || before === '' ? '—' : String(before)}
+            <div key={f} style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(110px, 1.6fr) minmax(56px, 1fr) 18px minmax(56px, 1fr)',
+              gap: 10, alignItems: 'baseline',
+              fontSize: 12, padding: '8px 0',
+              borderTop: i === 0 ? 'none' : `1px solid ${theme.rule}`,
+            }}>
+              <div style={{ color: theme.inkSoft, fontWeight: 500 }}>{editReqFieldLabel(f)}</div>
+              <div style={{ color: RED, textDecoration: 'line-through', fontFamily: theme.mono || 'monospace', textAlign: 'right' }}>
+                {beforeStr}
               </div>
-              <div style={{ color: theme.inkMuted }}>→</div>
-              <div style={{ color: '#1F6E1F', fontFamily: theme.mono, fontSize: 12, fontWeight: 600 }}>
-                {after == null || after === '' ? '—' : String(after)}
+              <div style={{ color: theme.inkMuted, textAlign: 'center' }}>→</div>
+              <div style={{ color: GREEN, fontFamily: theme.mono || 'monospace', fontWeight: 700, textAlign: 'right' }}>
+                {afterStr}
               </div>
             </div>
           );
@@ -129,15 +239,55 @@ function EditReqCard({ req, theme, onApprove, onReject, busy }) {
 
       {req.reason && (
         <div style={{
-          fontSize: 12, color: theme.inkSoft, fontStyle: 'italic',
-          fontFamily: theme.serif, marginBottom: 12, lineHeight: 1.4,
+          fontSize: 13, color: theme.inkSoft, lineHeight: 1.5,
+          background: theme.bgElev || 'rgba(255,255,255,0.03)',
+          borderLeft: `3px solid ${theme.accent || theme.rule}`,
+          padding: '10px 14px',
+          marginBottom: 14, borderRadius: '0 8px 8px 0',
+          fontStyle: 'italic',
         }}>"{req.reason}"</div>
       )}
 
       {isPending && (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Button theme={theme} variant="primary" size="sm" fullWidth onClick={onApprove} disabled={busy}>Approve</Button>
-          <Button theme={theme} variant="ghost" size="sm" fullWidth onClick={onReject} disabled={busy}>Reject</Button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            type="button"
+            onClick={onApprove}
+            disabled={busy}
+            style={{
+              flex: 1, minHeight: 44,
+              padding: '11px 18px',
+              background: busy ? theme.rule : ACCENT,
+              color: busy ? theme.inkMuted : ACCENT_INK,
+              border: 'none', borderRadius: 10,
+              fontSize: 14, fontWeight: 700, fontFamily: 'inherit',
+              cursor: busy ? 'not-allowed' : 'pointer',
+              letterSpacing: 0.2,
+              boxShadow: busy ? 'none' : `0 1px 0 ${theme.rule}, 0 2px 8px rgba(0,0,0,0.08)`,
+              transition: 'transform 0.1s ease, box-shadow 0.1s ease',
+            }}
+          >
+            {busy ? 'Working…' : 'Approve'}
+          </button>
+          <button
+            type="button"
+            onClick={onReject}
+            disabled={busy}
+            style={{
+              flex: 1, minHeight: 44,
+              padding: '11px 18px',
+              background: 'transparent',
+              color: busy ? theme.inkMuted : RED,
+              border: `1px solid ${busy ? theme.rule : RED + '55'}`,
+              borderRadius: 10,
+              fontSize: 14, fontWeight: 600, fontFamily: 'inherit',
+              cursor: busy ? 'not-allowed' : 'pointer',
+              letterSpacing: 0.2,
+              transition: 'background 0.1s ease',
+            }}
+          >
+            Reject
+          </button>
         </div>
       )}
     </Card>
