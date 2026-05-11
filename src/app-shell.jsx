@@ -572,7 +572,7 @@ function App() {
       // dashboard page"). Approvals moved to its own route + tab.
       case 'home':        return <AdminDashboard state={state} theme={theme} navigate={navigate}/>;
       case 'dashboard':   return <AdminDashboard state={state} theme={theme} navigate={navigate}/>;
-      case 'approvals':   return <AdminApprovals state={state} theme={theme} onApprove={approveAdj} onReject={rejectAdj} onAssignCA={assignCA}/>;
+      case 'approvals':   return <AdminApprovals state={state} theme={theme} navigate={navigate} onApprove={approveAdj} onReject={rejectAdj} onAssignCA={assignCA}/>;
       case 'edits':       return <AdminEditApprovals state={state} theme={theme}/>;
       case 'reviews':     return <AdminReviewsInbox state={state} theme={theme}/>;
       case 'bonus':       return <AdminAnnualBonus state={state} theme={theme}/>;

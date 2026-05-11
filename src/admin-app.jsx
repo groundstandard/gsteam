@@ -1,9 +1,31 @@
 // admin-app.jsx — Admin persona screens
 
-function AdminApprovals({ state, theme, onApprove, onReject, onAssignCA }) {
+function AdminApprovals({ state, theme, navigate, onApprove, onReject, onAssignCA }) {
   const pending = state.adjustments.filter(a => a.status === 'Pending');
   const unassigned = state.clients.filter(c => !c.assignedCA && !c.cancelDate);
   const cas = state.cas.filter(c => c.active);
+
+  // Bobby 2026-05-11: "approvals are not showing up in my section". Edit
+  // Requests (TKT-12.1) lived only on a separate page under More → Edit
+  // Requests, so non-commission edits from CAs (Kurt's metric edits etc.)
+  // never surfaced on the main Approvals view. Pull pending edit requests
+  // in here so the Owner sees every decision-needed item in one place.
+  const pendingEditRequests = (state.editRequests || []).filter(r => r.status === 'pending');
+  const [editBusy, setEditBusy] = React.useState(null);
+  const decideEditRequest = async (req, status) => {
+    setEditBusy(req.id);
+    if (CABT_getApiMode() === 'supabase') {
+      try {
+        if (status === 'approved') {
+          await CABT_api.approveEditRequest(req.id);
+        } else {
+          const sb = await CABT_sb();
+          await sb.from('edit_requests').update({ status: 'rejected' }).eq('id', req.id);
+        }
+      } catch (e) { console.error('[approve edit request]', e); }
+    }
+    setEditBusy(null);
+  };
 
   // Diagnostics
   const missingMonth = state.monthlyMetrics.filter(m => !m.month).length;
@@ -12,6 +34,45 @@ function AdminApprovals({ state, theme, onApprove, onReject, onAssignCA }) {
 
   return (
     <div style={{ padding: '8px 16px 100px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Pending edit requests — Bobby 2026-05-11 visibility fix. */}
+      <div>
+        <SectionLabel theme={theme}>
+          <span>Edit requests · {pendingEditRequests.length}</span>
+        </SectionLabel>
+        {pendingEditRequests.length === 0 && (
+          <Card theme={theme}>
+            <div style={{ color: theme.inkMuted, fontSize: 13 }}>No pending edit requests.</div>
+          </Card>
+        )}
+        {pendingEditRequests.length > 0 && typeof window.EditReqCard === 'function' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {pendingEditRequests.map(r => (
+              <window.EditReqCard
+                key={r.id}
+                req={r}
+                theme={theme}
+                onApprove={() => decideEditRequest(r, 'approved')}
+                onReject={() => decideEditRequest(r, 'rejected')}
+                busy={editBusy === r.id}
+              />
+            ))}
+            {typeof navigate === 'function' && (
+              <button
+                onClick={() => navigate('edits')}
+                style={{
+                  alignSelf: 'flex-start', padding: '6px 12px', height: 32,
+                  background: 'transparent', color: theme.inkSoft,
+                  border: `1px solid ${theme.rule}`, borderRadius: 8,
+                  fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+                }}
+              >
+                Open full Edit Requests queue →
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       <div>
         <SectionLabel theme={theme}>
           <span>Adjustments · {pending.length}</span>

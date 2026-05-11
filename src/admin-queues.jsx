@@ -363,4 +363,8 @@ function SEED_REVIEWS(state) {
   ];
 }
 
-Object.assign(window, { AdminEditApprovals, AdminReviewsInbox });
+// EditReqCard exported so AdminApprovals can render pending edit requests
+// inline on the main Approvals page (Bobby 2026-05-11: "approvals are not
+// showing up in my section" — Edit Requests were hidden under More, fixed
+// by surfacing them on the Approvals view too).
+Object.assign(window, { AdminEditApprovals, AdminReviewsInbox, EditReqCard });
