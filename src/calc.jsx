@@ -555,9 +555,28 @@ function caScorecard(ca, state) {
   // Pot read from quarter_inputs (agency_gross × pot_pct), with config
   // fallback (potPercentage default 0.005, agencyGross required) so the
   // math doesn't NaN before the table is populated.
-  const qInputs = (state && state.quarterInputs) || null;
+  //
+  // Bobby 2026-05-12: "Bonus pot for Q2 2026 isn't set yet. I set the
+  // quarter already under Admin." Two bugs were combining to surface
+  // this even after a successful save:
+  //   1. state.quarterInputs is computed once at app-load (api.jsx
+  //      loadStateSupabase picks the row matching cfg.quarterStart).
+  //      Realtime pushes new rows into state.allQuarterInputs but
+  //      never re-derives state.quarterInputs, so it stays null/stale.
+  //      Fix: pick the right row HERE on every scorecard call by
+  //      matching qStartIso against allQuarterInputs.
+  //   2. The DB column is pot_pct → after toUI it becomes potPct, but
+  //      this code was reading qInputs.potPercentage. Mismatch → fell
+  //      through to the cfg default (0.005). agencyGrossLastMonth was
+  //      already correct because that one matches.
+  const allQI = (state && state.allQuarterInputs) || [];
+  const qInputs = allQI.find(q => q.quarterStart === qStartIso)
+    || (state && state.quarterInputs)
+    || allQI[0]
+    || null;
   const agencyGross = _n(qInputs && qInputs.agencyGrossLastMonth, _n(cfgGet(cfg, 'agencyGrossLastMonth', 0)));
-  const potPct = _n(qInputs && qInputs.potPercentage, _n(cfgGet(cfg, 'potPercentage', 0.005)));
+  const potPct = _n(qInputs && (qInputs.potPct != null ? qInputs.potPct : qInputs.potPercentage),
+                    _n(cfgGet(cfg, 'potPercentage', 0.005)));
   const totalPot = agencyGross * potPct;
 
   // Each CA's MRR share of all eligible-MRR
@@ -597,6 +616,11 @@ function caScorecard(ca, state) {
     totalPot,
     caEligibleMrr,
     clients: subs,
+    // Bobby 2026-05-12: the CA Home greeting + "pot isn't set" banner
+    // were hardcoded to "Q2 2026". Expose the quarter window so the UI
+    // can derive a dynamic label and stay correct after Q2 ends.
+    qStart: qStartIso,
+    qEnd: qEndIso,
   };
 }
 

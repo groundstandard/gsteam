@@ -138,17 +138,32 @@ function CAHome({ state, ca, theme, density, navigate }) {
       {/* Greeting + headline — plain text on the page background. Bobby
           2026-05-06: "Lets get rid of the yellow and purple backgrounds.
           instead make the 4 cards background yellow or purple." */}
+      {/* Bobby 2026-05-12: derive the quarter label from score.qStart
+          (Q2 2026 was hardcoded). Falls back to "this quarter" if the
+          calc didn't return a window. */}
+      {(() => null)()}
       <div style={{ padding: '4px 4px 0' }}>
         <div style={{ fontFamily: theme.serif, fontSize: 13, color: theme.inkMuted, letterSpacing: 0.3, marginBottom: 6 }}>
-          Hey {ca.name.split(' ')[0]} — Q2 2026
+          Hey {ca.name.split(' ')[0]} — {(() => {
+            if (!score.qStart) return 'this quarter';
+            const [yy, mm] = String(score.qStart).split('-').map(Number);
+            const qn = Math.floor(((mm || 1) - 1) / 3) + 1;
+            return `Q${qn} ${yy}`;
+          })()}
         </div>
         <div style={{ fontFamily: theme.serif, fontSize: 22, fontWeight: 500, color: theme.ink, lineHeight: 1.25, letterSpacing: -0.3, maxWidth: 540 }}>
           {(() => {
+            const qLabel = (() => {
+              if (!score.qStart) return 'this quarter';
+              const [yy, mm] = String(score.qStart).split('-').map(Number);
+              const qn = Math.floor(((mm || 1) - 1) / 3) + 1;
+              return `Q${qn} ${yy}`;
+            })();
             if (projected > 0) {
               return <>You're on track for <em style={{ color: theme.accent, fontStyle: 'normal', fontWeight: 700 }}>{CABT_fmtMoney(projected)}</em> this quarter.</>;
             }
             if (!score.totalPot || score.totalPot <= 0) {
-              return <>Bonus pot for Q2 2026 isn't set yet. Admin → Quarter inputs.</>;
+              return <>Bonus pot for {qLabel} isn't set yet. Admin → Quarter inputs.</>;
             }
             if (!score.mrrShare || score.mrrShare <= 0) {
               return <>No bonus-eligible MRR on your book yet — log monthly metrics to qualify.</>;
