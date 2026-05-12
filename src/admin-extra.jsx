@@ -2587,7 +2587,14 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
     else { setSortKey(k); setSortDir(k === 'name' || k === 'caName' ? 'asc' : 'desc'); }
   };
 
-  const Th = ({ k, children, align = 'left', width }) => {
+  // Bobby 2026-05-12: "When i scroll on this page...i want the Client column
+  // to remain static. When i scroll to the left i cannot see the Client name."
+  // The "Client" column (id='name') is now sticky-left so it stays visible
+  // while the rest of the table scrolls horizontally. Header gets z-index 3
+  // (top + left corner — must overlay both header and sticky column),
+  // sticky body cells get z-index 1 (overlay normal scrolling cells), normal
+  // header cells get z-index 2.
+  const Th = ({ k, children, align = 'left', width, sticky }) => {
     const active = sortKey === k;
     return (
       <th onClick={() => setSort(k)} style={{
@@ -2595,15 +2602,22 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
         fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase',
         color: active ? theme.ink : theme.inkMuted,
         cursor: 'pointer', borderBottom: `1px solid ${theme.rule}`,
-        background: theme.bgElev, position: 'sticky', top: 0, zIndex: 1,
+        background: theme.bgElev,
+        position: 'sticky',
+        top: 0,
+        left: sticky ? 0 : undefined,
+        zIndex: sticky ? 3 : 2,
         whiteSpace: 'nowrap', userSelect: 'none', width,
+        // Right edge shadow on the sticky column so its boundary is visible
+        // when the next column scrolls behind it.
+        boxShadow: sticky ? `inset -1px 0 0 ${theme.rule}` : undefined,
       }}>
         {children}
         {active && <span style={{ marginLeft: 4, opacity: 0.7 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
       </th>
     );
   };
-  const Td = ({ children, align = 'left', mono, color, bold, status }) => (
+  const Td = ({ children, align = 'left', mono, color, bold, status, sticky }) => (
     <td style={{
       padding: '10px 8px', fontSize: 12,
       color: color || theme.ink,
@@ -2612,6 +2626,12 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
       fontWeight: bold ? 700 : 500,
       textAlign: align, whiteSpace: 'nowrap',
       borderBottom: `1px solid ${theme.rule}`,
+      position: sticky ? 'sticky' : undefined,
+      left: sticky ? 0 : undefined,
+      zIndex: sticky ? 1 : undefined,
+      // Opaque background so scrolled content doesn't bleed through.
+      background: sticky ? theme.surface : undefined,
+      boxShadow: sticky ? `inset -1px 0 0 ${theme.rule}` : undefined,
     }}>
       {status && (
         <span style={{
@@ -3070,7 +3090,8 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
           <thead>
             <tr>
               {visibleColumnObjs.map(col => (
-                <Th key={col.id} k={col.sortKey || col.id} align={col.align}>{col.label}</Th>
+                <Th key={col.id} k={col.sortKey || col.id} align={col.align}
+                    sticky={col.id === 'name'}>{col.label}</Th>
               ))}
             </tr>
           </thead>
@@ -3083,7 +3104,8 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
                   onClick={() => navigate('client-detail', { clientId: r.id })}
                   style={{ cursor: 'pointer' }}>
                 {visibleColumnObjs.map(col => (
-                  <Td key={col.id} align={col.align} mono={col.mono}>{col.render(r)}</Td>
+                  <Td key={col.id} align={col.align} mono={col.mono}
+                      sticky={col.id === 'name'}>{col.render(r)}</Td>
                 ))}
               </tr>
             ))}
