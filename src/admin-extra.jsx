@@ -2487,6 +2487,31 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
       return rows.slice(-12).map(r => Number(r.clientMRR || 0));
     })();
 
+    // Bobby 2026-05-12: "Soulcraft has 2 months of metrics. That means 2
+    // months of Gross Revenue. So under MRR, it should be the average over
+    // all the months that we have data on. If we add revenue for the 2nd
+    // month, we should see the average calculated in the MRR column."
+    //
+    // The stored client_mrr is set at submit time (form's computeRollingMRR)
+    // but doesn't cascade-update when neighbor months are added/edited —
+    // and the historical SQL import wrote MRR equal to gross verbatim
+    // (no average). Derive the displayed MRR fresh from the trailing-3
+    // months of gross revenue across the client's full history, ignoring
+    // months with $0 gross so a placeholder row doesn't drag the avg down.
+    const displayMRR = (() => {
+      const allRows = (CABT_effectiveMonthlyMetrics
+        ? CABT_effectiveMonthlyMetrics(state.monthlyMetrics, state.weeklyMetrics, c.id)
+        : allMonthlyMetricsState.filter(m => m.clientId === c.id)).slice();
+      allRows.sort((a, b) => (b.month || '').localeCompare(a.month || '')); // desc
+      const trailingGrosses = allRows
+        .map(m => Number(m.clientGrossRevenue || m.clientMRR || 0))
+        .filter(v => v > 0)
+        .slice(0, 3);
+      return trailingGrosses.length > 0
+        ? trailingGrosses.reduce((a, b) => a + b, 0) / trailingGrosses.length
+        : 0;
+    })();
+
     return {
       id: c.id,
       code: c.id,
@@ -2504,7 +2529,7 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
       termMonths:  c.termMonths || null,
       monthsOnBook,
       monthlyRetainer: Number(c.monthlyRetainer || 0),
-      mrr:        last ? Number(last.clientMRR || 0) : 0,
+      mrr:        displayMRR,
       stripeMrr:  last ? (last.stripeObservedMRR != null ? Number(last.stripeObservedMRR) : null) : null,
       revenue:    last ? Number(last.clientGrossRevenue || last.clientMRR || 0) : 0,
       adSpend:    qSpend,
