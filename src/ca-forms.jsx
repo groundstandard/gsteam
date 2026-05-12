@@ -103,18 +103,22 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
 
   // Trailing-3-period average of gross revenue for this client + cadence.
   // Lenient: if fewer than 3 entries exist, averages whatever's available.
-  // `thisRow` is the current form's pending value, included in the average.
-  // `excludeId` skips the row currently being edited (avoid double-count).
+  // Skips rows with $0 gross (placeholders where the CA logged funnel /
+  // students data but hadn't reconciled revenue yet — Bobby 2026-05-12).
+  // `thisRow` is the current form's pending value, included in the average
+  // only when > 0. `excludeId` skips the row currently being edited.
   const computeRollingMRR = (clientId, period, cadence, thisGross, excludeId) => {
     const tbl = cadence === 'weekly' ? (state.weeklyMetrics || []) : (state.monthlyMetrics || []);
     const periodKey = cadence === 'weekly' ? 'weekStart' : 'month';
     const priors = tbl
       .filter(m => m.clientId === clientId && m.id !== excludeId && m[periodKey] && m[periodKey] < period)
       .sort((a, b) => (b[periodKey] || '').localeCompare(a[periodKey] || ''))
-      .slice(0, 2)
-      .map(m => Number(m.clientGrossRevenue || m.clientMRR || 0));
-    const all = [Number(thisGross) || 0, ...priors];
-    return all.reduce((s, n) => s + n, 0) / all.length;
+      .map(m => Number(m.clientGrossRevenue || m.clientMRR || 0))
+      .filter(v => v > 0)
+      .slice(0, 2);
+    const thisVal = Number(thisGross) || 0;
+    const all = thisVal > 0 ? [thisVal, ...priors] : priors;
+    return all.length > 0 ? all.reduce((s, n) => s + n, 0) / all.length : 0;
   };
 
   const [form, setForm] = React.useState(editing
@@ -183,7 +187,11 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
     if (!form.clientId) e.clientId = 'Required';
     const periodField = activeCadence === 'weekly' ? 'weekStart' : 'month';
     if (!form[periodField]) e[periodField] = 'Required';
-    if (form.totalRevenue === '' || form.totalRevenue == null) e.totalRevenue = 'Required';
+    // Bobby 2026-05-12: "I cannot submit a metric unless i do the Gross
+    // Revenue This Month." Relaxed — gross revenue is now optional so
+    // the CA can save funnel/students data even on months where revenue
+    // hasn't been reconciled yet. Empty submits as $0; MRR auto-compute
+    // ignores $0 rows so a placeholder doesn't drag the trailing-3 avg.
 
     // Duplicate check (same client + same period, in the matching table)
     if (form.clientId && form[periodField]) {
@@ -362,8 +370,8 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
       <SectionCard {...sectionProps('money')} title="Revenue & spend"
         doneLabel={sectionDone.money ? `Gross ${CABT_fmtMoney(form.totalRevenue)} · Ad ${CABT_fmtMoney(form.adSpend)}` : 'Tap to fill'}>
         <Field label={activeCadence === 'weekly' ? 'Gross revenue this week' : 'Gross revenue this month'}
-               hint="Total money collected this period — recurring + one-time + add-ons. MRR is auto-computed below as the trailing-3 average."
-               required error={errors.totalRevenue} theme={theme}>
+               hint="Optional — leave blank if you haven't reconciled this period's revenue yet. MRR auto-computes from the trailing-3 months of revenue."
+               error={errors.totalRevenue} theme={theme}>
           <Input type="number" inputmode="decimal" prefix="$" value={form.totalRevenue} onChange={(v) => updateForm('totalRevenue', v)} theme={theme} />
         </Field>
         {/* TKT — Bobby 2026-05-07. Live preview of the computed MRR so the CA
