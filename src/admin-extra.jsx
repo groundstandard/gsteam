@@ -2843,44 +2843,194 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
     </div>
   ) : null;
 
+  // Bobby 2026-05-12 mobile cleanup: Tier moved from a chip-row to a
+  // popover-style multi-select button to save horizontal space; close
+  // when the user clicks outside it.
+  const tierPopoverRef = React.useRef(null);
+  const [tierOpen, setTierOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (!tierOpen) return;
+    const onClick = (e) => {
+      if (tierPopoverRef.current && !tierPopoverRef.current.contains(e.target)) {
+        setTierOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [tierOpen]);
+  const TIER_OPTIONS = [
+    { v: 'standard',   label: 'Standard'   },
+    { v: 'vip',        label: 'VIP'        },
+    { v: 'reach',      label: 'Reach'      },
+    { v: 'a_la_carte', label: 'À la carte' },
+  ];
+  const tierSummary = tierFilter.length === TIER_OPTIONS.length
+    ? 'All tiers'
+    : tierFilter.length === 0
+      ? 'None'
+      : tierFilter.map(v => TIER_OPTIONS.find(t => t.v === v)?.label || v).join(', ');
+
+  // Shared styles for the row-2 dropdown controls so they line up cleanly
+  // on both desktop and mobile.
+  const ctrlBtnStyle = {
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    padding: '8px 12px', height: 36,
+    background: theme.surface, color: theme.ink,
+    border: `1px solid ${theme.rule}`, borderRadius: 8,
+    fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+    cursor: 'pointer',
+  };
+  const ctrlSelectStyle = {
+    ...ctrlBtnStyle,
+    padding: '0 30px 0 12px',
+    appearance: 'none', WebkitAppearance: 'none',
+    backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='${encodeURIComponent(theme.inkMuted)}' d='M0 0h10L5 6z'/></svg>")`,
+    backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
+  };
+  const ctrlLabelStyle = { fontSize: 10, color: theme.inkMuted, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', marginRight: 4 };
+
   return (
     <div style={{ padding: '8px 16px 100px', display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Card theme={theme} padding={14}>
-        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 10 }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <SectionLabel theme={theme}>All-accounts dashboard</SectionLabel>
-            <div style={{ fontSize: 12, color: theme.inkMuted, marginTop: 4 }}>
-              {periodWindow.label} · {qStart} → {qEnd} · {sorted.length} client{sorted.length === 1 ? '' : 's'}{includeCancelled ? ' (incl. cancelled)' : ' (active only)'} · click any column to sort
-            </div>
+        {/* Bobby 2026-05-12 layout:
+            Row 1 — title + one-line subtitle (cleaner wording)
+            Row 2 — search bar on its own line (full-width on mobile)
+            Row 3 — filters: Tier popover, Period select, CA select,
+                    Include cancelled, Columns
+            Row 4 — custom date inputs (only when period = 'custom') */}
+
+        {/* Row 1: title + one-line summary */}
+        <SectionLabel theme={theme}>All-accounts dashboard</SectionLabel>
+        <div style={{
+          fontSize: 12, color: theme.inkMuted, marginTop: 4, marginBottom: 12,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>
+          {periodWindow.label} ({CABT_fmtDate(qStart)} – {CABT_fmtDate(qEnd)}) · <strong style={{ color: theme.inkSoft, fontWeight: 600 }}>{sorted.length}</strong> {includeCancelled ? 'total' : 'active'} client{sorted.length === 1 ? '' : 's'}
+        </div>
+
+        {/* Row 2: search bar on its own line */}
+        <input
+          type="search"
+          placeholder="Search by client name or id…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            display: 'block', width: '100%',
+            padding: '10px 14px', marginBottom: 10,
+            background: theme.surface, color: theme.ink,
+            border: `1px solid ${theme.rule}`, borderRadius: 8,
+            fontSize: 13, fontFamily: 'inherit', outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+
+        {/* Row 3: filters */}
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          {/* Tier — popover-style multi-select button */}
+          <div ref={tierPopoverRef} style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => setTierOpen(o => !o)}
+              aria-haspopup="true"
+              aria-expanded={tierOpen}
+              style={ctrlBtnStyle}
+            >
+              <span style={ctrlLabelStyle}>Tier</span>
+              <span style={{ color: theme.ink, fontWeight: 600 }}>{tierSummary}</span>
+              <span style={{ color: theme.inkMuted, marginLeft: 4 }}>▾</span>
+            </button>
+            {tierOpen && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 10,
+                background: theme.bg, border: `1px solid ${theme.rule}`,
+                borderRadius: 10, padding: 6, minWidth: 180,
+                boxShadow: '0 8px 20px rgba(0,0,0,0.18)',
+              }}>
+                {TIER_OPTIONS.map(t => {
+                  const checked = tierFilter.includes(t.v);
+                  return (
+                    <label key={t.v} style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
+                      fontSize: 13, color: theme.ink,
+                      background: checked ? (theme.bgElev || 'rgba(255,255,255,0.04)') : 'transparent',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => setTierFilter(prev => {
+                          const set = new Set(prev);
+                          if (set.has(t.v)) set.delete(t.v); else set.add(t.v);
+                          return set.size === 0 ? prev : Array.from(set);
+                        })}
+                        style={{ accentColor: theme.accent || '#D7FF3D' }}
+                      />
+                      {t.label}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          <input
-            type="search"
-            placeholder="Search by client name or id…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{
-              minWidth: 220, padding: '8px 12px',
-              background: theme.surface, color: theme.ink,
-              border: `1px solid ${theme.rule}`, borderRadius: 8,
-              fontSize: 13, fontFamily: 'inherit', outline: 'none',
-            }}
-          />
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: theme.inkMuted, cursor: 'pointer' }}>
-            <input type="checkbox" checked={includeCancelled} onChange={(e) => setIncludeCancelled(e.target.checked)} />
+
+          {/* Period — native select */}
+          <div style={{ position: 'relative' }}>
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              style={{ ...ctrlSelectStyle, paddingLeft: 56 }}
+              aria-label="Period"
+            >
+              <option value="month">This month</option>
+              <option value="quarter">This quarter</option>
+              <option value="year">This year</option>
+              <option value="all">All time</option>
+              <option value="custom">Custom</option>
+            </select>
+            <span style={{
+              position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+              pointerEvents: 'none', ...ctrlLabelStyle,
+            }}>Period</span>
+          </div>
+
+          {/* CA filter — locked when scopeCa is set */}
+          {!scopeCa && (state.cas || []).length > 0 && (
+            <div style={{ position: 'relative' }}>
+              <select
+                value={caFilter}
+                onChange={(e) => setCaFilter(e.target.value)}
+                style={{ ...ctrlSelectStyle, paddingLeft: 40 }}
+                aria-label="CA filter"
+              >
+                <option value="all">All CAs</option>
+                {(state.cas || []).filter(ca => ca.active).map(ca => (
+                  <option key={ca.id} value={ca.id}>{ca.id} · {ca.name}</option>
+                ))}
+              </select>
+              <span style={{
+                position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+                pointerEvents: 'none', ...ctrlLabelStyle,
+              }}>CA</span>
+            </div>
+          )}
+
+          {/* Include cancelled toggle */}
+          <label style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '8px 12px', height: 36,
+            border: `1px solid ${theme.rule}`, borderRadius: 8,
+            fontSize: 12, color: theme.inkSoft, cursor: 'pointer',
+          }}>
+            <input type="checkbox" checked={includeCancelled} onChange={(e) => setIncludeCancelled(e.target.checked)}
+                   style={{ accentColor: theme.accent || '#D7FF3D' }}/>
             Include cancelled
           </label>
-          {/* TKT-12.3c — column chooser entry point */}
+
+          {/* Columns chooser */}
           <button
             onClick={() => setChooserOpen(true)}
             aria-label="Choose columns"
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '8px 12px', height: 36,
-              background: theme.surface, color: theme.ink,
-              border: `1px solid ${theme.rule}`, borderRadius: 8,
-              fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-              cursor: 'pointer',
-            }}
+            style={ctrlBtnStyle}
           >
             <Icon name="cog" size={14} color={theme.inkMuted}/>
             Columns
@@ -2888,101 +3038,29 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
           </button>
         </div>
 
-        {/* TKT-12.3a — Tier multi-select chips. Default Standard + VIP. */}
-        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 12, color: theme.inkMuted, fontWeight: 600 }}>Tier</span>
-          {[
-            { v: 'standard',   label: 'Standard'   },
-            { v: 'vip',        label: 'VIP'        },
-            { v: 'reach',      label: 'Reach'      },
-            { v: 'a_la_carte', label: 'À la carte' },
-          ].map(t => {
-            const checked = tierFilter.includes(t.v);
-            return (
-              <button key={t.v} onClick={() => {
-                setTierFilter(prev => {
-                  const set = new Set(prev);
-                  if (set.has(t.v)) set.delete(t.v); else set.add(t.v);
-                  // Don't allow zero — at least one tier must be selected
-                  return set.size === 0 ? prev : Array.from(set);
-                });
-              }} style={{
-                padding: '6px 12px', fontSize: 12, fontWeight: 700,
-                background: checked ? theme.ink : theme.surface,
-                color: checked ? (theme.accentInk || '#fff') : theme.ink,
-                border: `1px solid ${checked ? theme.ink : theme.rule}`,
-                borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
-              }}>{checked ? '✓ ' : ''}{t.label}</button>
-            );
-          })}
-
-          {/* TKT-12.3b — CA filter dropdown. Locked for non-admin (scopeCa) views. */}
-          {!scopeCa && (state.cas || []).length > 0 && (
-            <>
-              <span style={{ fontSize: 12, color: theme.inkMuted, fontWeight: 600, marginLeft: 8 }}>CA</span>
-              <select
-                value={caFilter}
-                onChange={(e) => setCaFilter(e.target.value)}
-                style={{
-                  padding: '6px 30px 6px 10px',
-                  background: theme.surface, color: theme.ink,
-                  border: `1px solid ${theme.rule}`, borderRadius: 999,
-                  fontSize: 12, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer',
-                  appearance: 'none', WebkitAppearance: 'none',
-                  backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='${encodeURIComponent(theme.inkMuted)}' d='M0 0h10L5 6z'/></svg>")`,
-                  backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
-                }}
-              >
-                <option value="all">All CAs</option>
-                {(state.cas || []).filter(ca => ca.active).map(ca => (
-                  <option key={ca.id} value={ca.id}>{ca.id} · {ca.name}</option>
-                ))}
-              </select>
-            </>
-          )}
-        </div>
-
-        {/* Period selector — Bobby 2026-05-06: choose month / quarter / year /
-            all-time / custom date range. */}
-        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-          <span style={{ fontSize: 12, color: theme.inkMuted, fontWeight: 600 }}>Period</span>
-          {[
-            { v: 'month',   label: 'This month'   },
-            { v: 'quarter', label: 'This quarter' },
-            { v: 'year',    label: 'This year'    },
-            { v: 'all',     label: 'All time'     },
-            { v: 'custom',  label: 'Custom'       },
-          ].map(p => (
-            <button key={p.v} onClick={() => setPeriod(p.v)} style={{
-              padding: '6px 12px', fontSize: 12, fontWeight: 700,
-              background: period === p.v ? theme.ink : theme.surface,
-              color: period === p.v ? (theme.accentInk || '#fff') : theme.ink,
-              border: `1px solid ${period === p.v ? theme.ink : theme.rule}`,
-              borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
-            }}>{p.label}</button>
-          ))}
-          {period === 'custom' && (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
-              <input
-                type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
-                style={{
-                  padding: '5px 8px', background: theme.surface, color: theme.ink,
-                  border: `1px solid ${theme.rule}`, borderRadius: 8, fontSize: 12,
-                  fontFamily: 'inherit',
-                }}
-              />
-              <span style={{ fontSize: 11, color: theme.inkMuted }}>→</span>
-              <input
-                type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
-                style={{
-                  padding: '5px 8px', background: theme.surface, color: theme.ink,
-                  border: `1px solid ${theme.rule}`, borderRadius: 8, fontSize: 12,
-                  fontFamily: 'inherit',
-                }}
-              />
-            </div>
-          )}
-        </div>
+        {/* Row 4: custom date inputs (only when period=custom) */}
+        {period === 'custom' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+            <span style={{ fontSize: 11, color: theme.inkMuted }}>From</span>
+            <input
+              type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+              style={{
+                padding: '6px 10px', background: theme.surface, color: theme.ink,
+                border: `1px solid ${theme.rule}`, borderRadius: 8, fontSize: 12,
+                fontFamily: 'inherit',
+              }}
+            />
+            <span style={{ fontSize: 11, color: theme.inkMuted }}>to</span>
+            <input
+              type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+              style={{
+                padding: '6px 10px', background: theme.surface, color: theme.ink,
+                border: `1px solid ${theme.rule}`, borderRadius: 8, fontSize: 12,
+                fontFamily: 'inherit',
+              }}
+            />
+          </div>
+        )}
       </Card>
 
       {PaginationBar}
