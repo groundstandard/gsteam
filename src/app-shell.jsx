@@ -589,6 +589,16 @@ function App() {
       case 'clients':         return <AdminClientRollup state={state} theme={theme} navigate={navigate}/>;
       case 'client-calc':      return <AdminClientCalc state={state} theme={theme} clientId={route.params.clientId} navigate={navigate} onSetCadence={setCadence} onSetRates={setClientRates}/>;
       case 'client-detail':    return <ClientDetail state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} clientId={route.params.clientId} navigate={navigate}/>;
+      // Bobby 2026-05-12: "I clicked to edit the metric and the screen is
+      // blank." The CA role had log-* routes wired; the Admin role never
+      // did, so navigating from Client Detail's tap-to-edit cards rendered
+      // null (default case). Mirror the CA log-* routes here. We resolve
+      // the CA via the client's assigned_ca → falls back to the first CA
+      // if for some reason the client isn't tied to one yet.
+      case 'log-metrics':      return <LogMetricsForm state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitMetrics} isAdmin={isAdminAuth}/>;
+      case 'log-event':        return <LogEventForm   state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitEvent}   isAdmin={isAdminAuth}/>;
+      case 'log-survey':       return <LogSurveyForm  state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitSurvey}  isAdmin={isAdminAuth}/>;
+      case 'log-checkin':      return <LogCheckinForm state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} presetClientId={route.params.clientId} navigate={navigate} onSubmit={submitCheckin}/>;
       case 'add-client':       return <AdminAddClient state={state} theme={theme} navigate={navigate} onSubmit={submitClient} presetFromStripe={route.params.presetFromStripe}/>;
       case 'pending-clients':  return <AdminPendingClients state={state} theme={theme} navigate={navigate}/>;
       case 'questions':   return <AdminOpenQuestions state={state} theme={theme}/>;
