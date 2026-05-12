@@ -328,9 +328,26 @@ function clientSubScores(client, metrics, surveys, config, today = new Date(), w
     else attrition = 1 - (cancelRate - greenFloor) / Math.max(critCeil - greenFloor, 0.0001);
   }
 
-  // Performance bucket: avg of 5 sub-scores (skip nulls per spec)
+  // Performance bucket: avg of 5 sub-scores (skip nulls per spec).
+  //
+  // Bobby 2026-05-12: "How is academy of jiu jitsu scottsdale 100%?"
+  // When the team had logged ONLY revenue (no ad spend, leads, funnel,
+  // students) the only non-null sub-score was mrrGrowth — pegged at 1.0
+  // because revenue grew month-over-month — and the average over a
+  // single value is that single value. So the client showed 100%
+  // Performance/Composite on the dashboard despite essentially no data.
+  //
+  // Guard: require at least 2 of 5 sub-scores to have actual data before
+  // we emit a Performance number. Below the threshold, return null so
+  // the dashboard / Client Detail render "—" with the "no data yet" copy
+  // instead of a misleadingly perfect score. Clients with only sparse
+  // tracking won't pollute the CA-level Performance bucket either,
+  // because nulls are skipped from that average.
+  const PER_CLIENT_MIN_SUBSCORES = 2;
   const perfParts = [mrrGrowth, leadCost, adSpend, funnel, attrition].filter(v => v != null && Number.isFinite(v));
-  const performance = perfParts.length ? perfParts.reduce((a, b) => a + b, 0) / perfParts.length : null;
+  const performance = perfParts.length >= PER_CLIENT_MIN_SUBSCORES
+    ? perfParts.reduce((a, b) => a + b, 0) / perfParts.length
+    : null;
 
   // ── Satisfaction (narrative — used for display only, not in buckets) ────
   // Per Formula Guide §SATISFACTION SUB-SCORE: separate display metric.
