@@ -312,6 +312,62 @@ function App() {
     navigate('back');
   };
 
+  // Bobby 2026-05-12: "I needto be ableto delete a metric ... deletions
+  // should be only possible for Admin. If the CA wants to delete, then
+  // i just need to be sent to Approvals." Generic delete-or-request that
+  // every log-* form's onDelete handler routes through.
+  //
+  // Admin/Owner: directly DELETE the row from Supabase.
+  // Non-admin (CA): submit an edit_request with field_changes carrying a
+  // _action='delete' sentinel that the apply trigger interprets as a
+  // DELETE on approve.
+  const requestDelete = async (tableName, rowId) => {
+    try {
+      await CABT_api.submitEditRequest({
+        tableName,
+        rowId,
+        fieldChanges: { _action: 'delete' },
+        reason: 'Delete requested by CA',
+      });
+      showToast('Delete request submitted · admin will review');
+    } catch (e) {
+      showToast('Delete request failed');
+      console.error('[requestDelete]', e);
+    }
+    navigate('back');
+  };
+
+  const deleteRow = async (tableName, stateKey, rowId) => {
+    if (!isAdminAuth && CABT_getApiMode() === 'supabase') {
+      return requestDelete(tableName, rowId);
+    }
+    setState(s => ({
+      ...s,
+      [stateKey]: (s[stateKey] || []).filter(r => r.id !== rowId),
+    }));
+    if (CABT_getApiMode() === 'supabase') {
+      try {
+        await CABT_api.deleteRow(tableName, rowId);
+        showToast('Deleted');
+      } catch (e) {
+        showToast('Delete failed');
+        console.error('[deleteRow]', e);
+      }
+    }
+    navigate('back');
+  };
+
+  const deleteMetric = (rowId, cadence = 'monthly') => {
+    const isWeekly = cadence === 'weekly';
+    return deleteRow(
+      isWeekly ? 'weekly_metrics' : 'monthly_metrics',
+      isWeekly ? 'weeklyMetrics'  : 'monthlyMetrics',
+      rowId,
+    );
+  };
+  const deleteEvent = (rowId) => deleteRow('growth_events', 'growthEvents', rowId);
+  const deleteSurvey = (rowId) => deleteRow('surveys', 'surveys', rowId);
+
   const submitMetrics = async (row, isEdit, cadence = 'monthly') => {
     const isWeekly = cadence === 'weekly';
     const stateKey = isWeekly ? 'weeklyMetrics' : 'monthlyMetrics';
@@ -556,9 +612,9 @@ function App() {
         case 'book': return <CABook state={state} ca={ca} theme={theme} navigate={navigate} initialFilter={route.params.filter}/>;
         case 'dashboard': return <AdminDashboard state={state} theme={theme} navigate={navigate} scopeCa={ca?.id}/>;
         case 'client-detail': return <ClientDetail state={state} ca={ca} theme={theme} clientId={route.params.clientId} navigate={navigate}/>;
-        case 'log-metrics': return <LogMetricsForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitMetrics} isAdmin={isAdminAuth}/>;
-        case 'log-event': return <LogEventForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitEvent} isAdmin={isAdminAuth}/>;
-        case 'log-survey': return <LogSurveyForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitSurvey} isAdmin={isAdminAuth}/>;
+        case 'log-metrics': return <LogMetricsForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitMetrics} onDelete={deleteMetric} isAdmin={isAdminAuth}/>;
+        case 'log-event': return <LogEventForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitEvent} onDelete={deleteEvent} isAdmin={isAdminAuth}/>;
+        case 'log-survey': return <LogSurveyForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitSurvey} onDelete={deleteSurvey} isAdmin={isAdminAuth}/>;
         case 'log-checkin': return <LogCheckinForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} navigate={navigate} onSubmit={submitCheckin}/>;
         case 'scorecard': return <CAScorecard state={state} ca={ca} theme={theme} viz={t.scorecardViz}/>;
         case 'profile': return <CAProfile state={state} ca={ca} theme={theme} navigate={navigate} profile={authedProfile} onSignOut={signOutHandler}/>;
@@ -595,9 +651,9 @@ function App() {
       // null (default case). Mirror the CA log-* routes here. We resolve
       // the CA via the client's assigned_ca → falls back to the first CA
       // if for some reason the client isn't tied to one yet.
-      case 'log-metrics':      return <LogMetricsForm state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitMetrics} isAdmin={isAdminAuth}/>;
-      case 'log-event':        return <LogEventForm   state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitEvent}   isAdmin={isAdminAuth}/>;
-      case 'log-survey':       return <LogSurveyForm  state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitSurvey}  isAdmin={isAdminAuth}/>;
+      case 'log-metrics':      return <LogMetricsForm state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitMetrics} onDelete={deleteMetric} isAdmin={isAdminAuth}/>;
+      case 'log-event':        return <LogEventForm   state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitEvent}   onDelete={deleteEvent}  isAdmin={isAdminAuth}/>;
+      case 'log-survey':       return <LogSurveyForm  state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitSurvey}  onDelete={deleteSurvey} isAdmin={isAdminAuth}/>;
       case 'log-checkin':      return <LogCheckinForm state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} presetClientId={route.params.clientId} navigate={navigate} onSubmit={submitCheckin}/>;
       case 'add-client':       return <AdminAddClient state={state} theme={theme} navigate={navigate} onSubmit={submitClient} presetFromStripe={route.params.presetFromStripe}/>;
       case 'pending-clients':  return <AdminPendingClients state={state} theme={theme} navigate={navigate}/>;

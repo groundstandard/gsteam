@@ -151,7 +151,13 @@ function editReqResolveContext(req, state) {
 function EditReqCard({ req, theme, state, onApprove, onReject, busy }) {
   const isPending = req.status === 'pending';
   const tone = req.status === 'approved' ? 'green' : req.status === 'rejected' ? 'red' : 'yellow';
-  const fields = Object.keys(req.fieldChanges || {});
+  // Bobby 2026-05-12: CAs now submit deletion requests via this same
+  // queue with field_changes carrying _action='delete'. The trigger
+  // detects the sentinel and DELETEs the row instead of UPDATE-ing it
+  // on approve; flag the card here so the admin sees what they're
+  // approving (deletion vs edit) before they click.
+  const isDeleteRequest = (req.fieldChanges || {})._action === 'delete';
+  const fields = Object.keys(req.fieldChanges || {}).filter(k => !k.startsWith('_'));
 
   const tableLabel = EDIT_REQ_TABLE_LABELS[req.tableName] || req.tableName;
   const context = editReqResolveContext(req, state);
@@ -177,6 +183,15 @@ function EditReqCard({ req, theme, state, onApprove, onReject, busy }) {
             letterSpacing: -0.15, lineHeight: 1.3,
             overflow: 'hidden', textOverflow: 'ellipsis',
           }}>
+            {isDeleteRequest && (
+              <span style={{
+                display: 'inline-block', verticalAlign: 'middle',
+                background: RED + '22', color: RED,
+                border: `1px solid ${RED}55`,
+                fontSize: 9, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase',
+                padding: '2px 6px', borderRadius: 6, marginRight: 8,
+              }}>Delete</span>
+            )}
             {tableLabel}
             {context?.clientName && (
               <>
@@ -202,7 +217,27 @@ function EditReqCard({ req, theme, state, onApprove, onReject, busy }) {
         {req.rowId}
       </div>
 
+      {/* Delete-request callout — no diff to show, just a clear warning. */}
+      {isDeleteRequest && (
+        <div style={{
+          background: RED + '12',
+          border: `1px solid ${RED}33`,
+          color: theme.ink,
+          borderRadius: 10, padding: '10px 14px',
+          marginBottom: 14,
+          fontSize: 13, lineHeight: 1.45,
+        }}>
+          <div style={{ fontWeight: 700, color: RED, marginBottom: 2 }}>
+            Approve will delete this row permanently.
+          </div>
+          <div style={{ color: theme.inkSoft }}>
+            The {tableLabel.toLowerCase()} entry will be removed. The audit log keeps a record of who requested + who approved.
+          </div>
+        </div>
+      )}
+
       {/* Diff panel — labeled rows with line-through old / bold new */}
+      {!isDeleteRequest && fields.length > 0 && (
       <div style={{
         background: theme.bgSoft || 'rgba(255,255,255,0.04)',
         border: `1px solid ${theme.rule}`,
@@ -236,6 +271,7 @@ function EditReqCard({ req, theme, state, onApprove, onReject, busy }) {
           );
         })}
       </div>
+      )}
 
       {req.reason && (
         <div style={{

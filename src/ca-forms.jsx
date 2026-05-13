@@ -45,7 +45,7 @@ function SectionCard({ id, title, doneLabel, children, theme, isOpen, done, onTo
 //   - shows a `month` picker when monthly
 // Numeric fields are identical either way; the backend rolls weekly entries
 // up to monthly via v_monthly_metrics_effective for scoring.
-function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, editingId, isAdmin }) {
+function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, onDelete, editingId, isAdmin }) {
   const myClients = state.clients.filter(c => c.assignedCA === ca.id && !c.cancelDate);
 
   // Editing: try weekly first (since IDs are prefixed differently); fall back
@@ -152,6 +152,12 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
   const [errors, setErrors] = React.useState({});
   const [warnings, setWarnings] = React.useState({});
   const [duplicateBlock, setDuplicateBlock] = React.useState(null);
+  // Bobby 2026-05-12: "I needto be ableto delete a metric. this Jean
+  // Jacques MAchado metric was added as a test. it's fake. deletions
+  // should be only possible for Admin. If the CA wants to delete, then
+  // i just need to be sent to Approvals." Two-step destructive flow:
+  // tap "Delete" → confirmation panel replaces the action buttons.
+  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
 
   const updateForm = (key, value) => {
     setForm(f => {
@@ -479,6 +485,64 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
           }}
         />
       </SectionCard>
+
+      {/* Delete this metric — only when editing an existing row.
+          Admin/Owner gets a direct delete; CA gets a "submit delete request"
+          that lands in Approvals. */}
+      {editing && typeof onDelete === 'function' && !confirmingDelete && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 4 }}>
+          <button
+            type="button"
+            onClick={() => setConfirmingDelete(true)}
+            style={{
+              padding: '8px 14px',
+              background: 'transparent',
+              color: STATUS.red,
+              border: `1px solid ${STATUS.red}55`,
+              borderRadius: 8, fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+              cursor: 'pointer', letterSpacing: 0.2,
+            }}
+          >
+            Delete this {activeCadence === 'weekly' ? 'week' : 'month'}
+          </button>
+        </div>
+      )}
+
+      {editing && confirmingDelete && (
+        <div style={{
+          padding: '14px 16px', borderRadius: 10,
+          background: STATUS.red + '12',
+          border: `1px solid ${STATUS.red}33`,
+        }}>
+          <div style={{ fontWeight: 700, color: STATUS.red, marginBottom: 6, fontSize: 14 }}>
+            {isAdmin ? 'Permanently delete this metric?' : 'Submit delete request?'}
+          </div>
+          <div style={{ fontSize: 12, color: theme.inkSoft, lineHeight: 1.45, marginBottom: 12 }}>
+            {isAdmin
+              ? 'This removes the row from the database. The audit log keeps a record.'
+              : 'An admin will review the request before the row is actually removed.'}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button theme={theme} variant="secondary" onClick={() => setConfirmingDelete(false)}>
+              Cancel
+            </Button>
+            <button
+              type="button"
+              onClick={() => onDelete(editingId, activeCadence)}
+              style={{
+                flex: 1, minHeight: 40,
+                padding: '10px 16px',
+                background: STATUS.red, color: '#fff',
+                border: 'none', borderRadius: 10,
+                fontSize: 14, fontWeight: 700, fontFamily: 'inherit',
+                cursor: 'pointer', letterSpacing: 0.2,
+              }}
+            >
+              {isAdmin ? 'Permanently delete' : 'Submit delete request'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Sticky save */}
       <StickyBar theme={theme}>
