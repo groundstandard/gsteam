@@ -1,10 +1,11 @@
 // ca-detail.jsx — Client Detail screen with Overview/Metrics/Events/Surveys tabs
 
-function ClientDetail({ state, ca, theme, clientId, navigate }) {
+function ClientDetail({ state, ca, theme, clientId, navigate, isAdmin, onCancelAccount }) {
   const [tab, setTab] = React.useState('overview');
   // Bobby 2026-05-05: history view consolidates every log type for a client
   // and groups them by month or week. Toggle persists per-session per-client.
   const [historyGroup, setHistoryGroup] = React.useState('month'); // 'month' | 'week'
+  const [showCancelModal, setShowCancelModal] = React.useState(false);
   const client = state.clients.find(c => c.id === clientId);
   if (!client) return <div style={{ padding: 24 }}>Client not found.</div>;
 
@@ -141,7 +142,84 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
             <KV theme={theme} label="Membership" value={client.hasMembershipAddon ? 'Yes' : '—'} />
             <KV theme={theme} label="AE"         value={state.sales.find(s => s.id === client.ae)?.name || '—'} last />
           </Card>
+
+          {/* Account Status — cancel_date + cancel_reason. Admins can set or
+              edit; everyone can see the current status. Bobby 2026-05-15. */}
+          <Card theme={theme}>
+            <SectionLabel theme={theme}>Account Status</SectionLabel>
+            {client.cancelDate ? (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <span style={{
+                    display: 'inline-block', padding: '3px 10px', borderRadius: 20,
+                    fontSize: 11, fontWeight: 800, letterSpacing: 0.5,
+                    textTransform: 'uppercase',
+                    background: 'rgba(198, 40, 40, 0.12)',
+                    color: '#C62828',
+                    border: '1px solid rgba(198, 40, 40, 0.3)',
+                  }}>Cancelled</span>
+                </div>
+                <KV theme={theme} label="Cancel date" value={CABT_fmtDate(client.cancelDate)} />
+                <KV theme={theme} label="Reason" value={
+                  (state.cancelReasons || []).find(r => r.code === client.cancelReason)?.label
+                  || client.cancelReason || '—'
+                } last />
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCancelModal(true)}
+                    style={{
+                      marginTop: 14, width: '100%', padding: '11px 16px',
+                      borderRadius: 10, border: `1.5px solid ${theme.rule}`,
+                      background: 'transparent', color: theme.ink,
+                      fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >Edit Cancellation</button>
+                )}
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <span style={{
+                    display: 'inline-block', padding: '3px 10px', borderRadius: 20,
+                    fontSize: 11, fontWeight: 800, letterSpacing: 0.5,
+                    textTransform: 'uppercase',
+                    background: 'rgba(67, 160, 71, 0.12)',
+                    color: '#2E7D32',
+                    border: '1px solid rgba(67, 160, 71, 0.3)',
+                  }}>Active</span>
+                </div>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCancelModal(true)}
+                    style={{
+                      width: '100%', padding: '11px 16px',
+                      borderRadius: 10, border: '1.5px solid rgba(198, 40, 40, 0.4)',
+                      background: 'rgba(198, 40, 40, 0.06)', color: '#C62828',
+                      fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >Mark as Cancelled</button>
+                )}
+              </div>
+            )}
+          </Card>
         </div>
+      )}
+
+      {showCancelModal && (
+        <CancelAccountModal
+          client={client}
+          theme={theme}
+          cancelReasons={state.cancelReasons || []}
+          onSave={async (cid, date, reason) => {
+            if (onCancelAccount) await onCancelAccount(cid, date, reason);
+            setShowCancelModal(false);
+          }}
+          onClose={() => setShowCancelModal(false)}
+        />
       )}
 
       {tab === 'dashboard' && (
@@ -525,6 +603,166 @@ function ClientDetail({ state, ca, theme, clientId, navigate }) {
     </div>
   );
 }
+
+// ── Cancel Account modal — Bobby 2026-05-15 ──────────────────────────────────
+// Dedicated form to set/edit cancel_date + cancel_reason on a client without
+// going through the monthly metrics log. Admin/owner only (caller's responsibility
+// to gate the button). Works for both new cancellations and retroactive updates.
+function CancelAccountModal({ client, theme, cancelReasons, onSave, onClose }) {
+  const [date,   setDate]   = React.useState(client.cancelDate   || '');
+  const [reason, setReason] = React.useState(client.cancelReason || '');
+  const [saving, setSaving] = React.useState(false);
+  const [err,    setErr]    = React.useState('');
+
+  const isEdit = !!client.cancelDate;
+  const canSave = date && reason && !saving;
+
+  const handleSave = async () => {
+    if (!date)   { setErr('Please enter a date.'); return; }
+    if (!reason) { setErr('Please select a reason.'); return; }
+    setSaving(true);
+    setErr('');
+    try {
+      await onSave(client.id, date, reason);
+    } catch (e) {
+      setErr('Save failed. Try again.');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0,
+        background: 'rgba(8, 12, 24, 0.55)',
+        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+        zIndex: 2000,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '20px',
+        animation: 'scrimIn 0.18s ease',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%', maxWidth: 400,
+          background: theme.bg, color: theme.ink,
+          borderRadius: 18,
+          padding: '24px 22px 20px',
+          boxShadow: '0 24px 60px rgba(0,0,0,0.32), 0 4px 12px rgba(0,0,0,0.14)',
+          animation: 'modalIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+          fontFamily: theme.sans,
+        }}
+      >
+        <div style={{
+          fontFamily: theme.serif || 'inherit',
+          fontSize: 20, fontWeight: 600, color: theme.ink,
+          letterSpacing: -0.3, lineHeight: 1.25, marginBottom: 4,
+        }}>{isEdit ? 'Edit Cancellation' : 'Mark as Cancelled'}</div>
+        <div style={{ fontSize: 13, color: theme.inkMuted, marginBottom: 20 }}>
+          {client.name}
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
+            Date of Cancellation
+          </div>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => { setDate(e.target.value); setErr(''); }}
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              padding: '11px 14px', borderRadius: 10,
+              border: `1.5px solid ${theme.rule}`,
+              background: theme.bgElev || theme.bg, color: theme.ink,
+              fontFamily: 'inherit', fontSize: 14,
+              outline: 'none',
+            }}
+          />
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
+            Reason for Cancellation
+          </div>
+          <select
+            value={reason}
+            onChange={(e) => { setReason(e.target.value); setErr(''); }}
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              padding: '11px 14px', borderRadius: 10,
+              border: `1.5px solid ${theme.rule}`,
+              background: theme.bgElev || theme.bg, color: theme.ink,
+              fontFamily: 'inherit', fontSize: 14,
+              outline: 'none', appearance: 'none', WebkitAppearance: 'none',
+            }}
+          >
+            <option value="">Select a reason…</option>
+            {(cancelReasons.length > 0
+              ? cancelReasons
+              : CABT_CANCEL_REASONS_FALLBACK
+            ).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+             .map(r => (
+              <option key={r.code} value={r.code}>{r.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {err && (
+          <div style={{ fontSize: 12, color: '#C62828', marginBottom: 12, lineHeight: 1.4 }}>{err}</div>
+        )}
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              flex: 1, padding: '13px 16px', borderRadius: 12,
+              background: 'transparent', color: theme.ink,
+              border: `1.5px solid ${theme.rule}`,
+              fontFamily: 'inherit', fontSize: 14.5, fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >Cancel</button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!canSave}
+            style={{
+              flex: 1.2, padding: '13px 16px', borderRadius: 12,
+              background: canSave ? '#C62828' : theme.rule,
+              color: canSave ? '#FFFFFF' : theme.inkMuted,
+              border: 'none',
+              fontFamily: 'inherit', fontSize: 14.5, fontWeight: 700,
+              cursor: canSave ? 'pointer' : 'not-allowed',
+              boxShadow: canSave ? '0 4px 12px rgba(198,40,40,0.30)' : 'none',
+              transition: 'background 0.15s, box-shadow 0.15s',
+            }}
+          >{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Fallback reasons if state.cancelReasons hasn't loaded yet (e.g. local mode)
+const CABT_CANCEL_REASONS_FALLBACK = [
+  { code: 'cost',       label: 'Cost',        sortOrder: 10 },
+  { code: 'results',    label: 'Results',     sortOrder: 20 },
+  { code: 'closed',     label: 'Closed',      sortOrder: 30 },
+  { code: 'pivoted',    label: 'Pivoted',     sortOrder: 40 },
+  { code: 'capacity',   label: 'Capacity',    sortOrder: 50 },
+  { code: 'inhouse',    label: 'Inhouse',     sortOrder: 60 },
+  { code: 'competitor', label: 'Competitor',  sortOrder: 70 },
+  { code: 'fit',        label: 'Fit',         sortOrder: 80 },
+  { code: 'scope',      label: 'Scope',       sortOrder: 90 },
+  { code: 'personal',   label: 'Personal',    sortOrder: 100 },
+  { code: 'paused',     label: 'Paused',      sortOrder: 110 },
+  { code: 'ghosted',    label: 'Ghosted',     sortOrder: 120 },
+  { code: 'nonpayment', label: 'Nonpayment',  sortOrder: 130 },
+];
 
 function KV({ theme, label, value, last }) {
   return (
