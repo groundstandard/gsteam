@@ -724,7 +724,15 @@ function App() {
         { name: 'more',      icon: 'cog',          label: 'More' },
       ];
 
-  // App body — used both inside and outside the iPhone frame
+  // App body — used both inside and outside the iPhone frame.
+  // Bobby 2026-05-15 bug fix: this used to be rendered as <Body .../>
+  // JSX, which made React treat it as a NEW component type on every App
+  // render (because the function reference changed each time App ran).
+  // That unmounted + remounted the whole subtree on every theme toggle
+  // or role switch, resetting every useState inside (e.g. the
+  // "Include cancelled" checkbox on the dashboard). The component is
+  // now invoked as a plain function call below so React reconciles its
+  // children directly against App's tree.
   const Body = ({ width, height, isPhone }) => (
     <div style={{
       width: '100%', height: '100%', background: theme.bg, color: theme.ink,
@@ -1192,17 +1200,17 @@ function App() {
 
       {useFrame ? (
         <IOSDevice width={402} height={874} dark={t.theme === 'athletic'}>
-          <Body width={402} height={874} isPhone={true}/>
+          {Body({ width: 402, height: 874, isPhone: true })}
         </IOSDevice>
       ) : isDesktopWide ? (
         <div style={{
           width: '100%', height: '100dvh', maxHeight: '100dvh',
         }}>
-          <Body width="100%" height="100dvh" isPhone={false}/>
+          {Body({ width: '100%', height: '100dvh', isPhone: false })}
         </div>
       ) : (
         <div style={{ width: '100%', height: '100dvh', maxHeight: '100dvh' }}>
-          <Body width="100%" height="100dvh" isPhone={false}/>
+          {Body({ width: '100%', height: '100dvh', isPhone: false })}
         </div>
       )}
       {/* Branded confirm dialog — portal-rendered, centered on viewport,
