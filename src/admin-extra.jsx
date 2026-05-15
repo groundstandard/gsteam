@@ -2872,13 +2872,15 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
             setPageSize(v === 'all' ? 'all' : Number(v));
           }}
           style={{
-            background: theme.surface, color: theme.ink,
+            backgroundColor: theme.surface, color: theme.ink,
             border: `1px solid ${theme.rule}`, borderRadius: 8,
             padding: '5px 24px 5px 10px', fontSize: 12, fontWeight: 600,
             fontFamily: 'inherit', cursor: 'pointer',
             appearance: 'none', WebkitAppearance: 'none',
-            backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='${encodeURIComponent(theme.inkMuted)}' d='M0 0h10L5 6z'/></svg>")`,
-            backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
+            backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='${theme.inkMuted.replace('#', '%23')}' d='M0 0h10L5 6z'/></svg>")`,
+            backgroundRepeat: 'no-repeat',
+            backgroundPosition: 'right 8px center',
+            backgroundSize: '10px 6px',
           }}
         >
           {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
@@ -2950,10 +2952,16 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
 
   // Shared styles for the row-2 dropdown controls so they line up cleanly
   // on both desktop and mobile.
+  // Bobby 2026-05-15: previous code used `background: theme.surface`
+  // (shorthand), which on every paint resets background-image/-repeat/
+  // -position to their defaults. In light mode this caused the SVG
+  // chevron arrow to tile across the whole button (a hatched pattern).
+  // Use longhand `backgroundColor` + explicit `backgroundSize` so the
+  // chevron always renders once at 10×6 in the right gutter.
   const ctrlBtnStyle = {
     display: 'inline-flex', alignItems: 'center', gap: 6,
     padding: '8px 12px', height: 36,
-    background: theme.surface, color: theme.ink,
+    backgroundColor: theme.surface, color: theme.ink,
     border: `1px solid ${theme.rule}`, borderRadius: 8,
     fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
     cursor: 'pointer',
@@ -2962,8 +2970,10 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
     ...ctrlBtnStyle,
     padding: '0 30px 0 12px',
     appearance: 'none', WebkitAppearance: 'none',
-    backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='${encodeURIComponent(theme.inkMuted)}' d='M0 0h10L5 6z'/></svg>")`,
-    backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
+    backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='${theme.inkMuted.replace('#', '%23')}' d='M0 0h10L5 6z'/></svg>")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 10px center',
+    backgroundSize: '10px 6px',
   };
   const ctrlLabelStyle = { fontSize: 10, color: theme.inkMuted, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', marginRight: 4 };
 

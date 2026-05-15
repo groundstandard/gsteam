@@ -1476,11 +1476,13 @@ function RoleSwitcher({ role, onChange, theme, allowedRoles }) {
 function UserPicker({ value, onChange, users, theme }) {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} style={{
-      background: theme.surface, color: theme.ink, border: `1px solid ${theme.rule}`,
+      backgroundColor: theme.surface, color: theme.ink, border: `1px solid ${theme.rule}`,
       borderRadius: 999, padding: '5px 26px 5px 10px', fontSize: 11, fontWeight: 600,
       fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer',
-      backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='${encodeURIComponent(theme.inkMuted)}' d='M0 0h10L5 6z'/></svg>")`,
-      backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
+      backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='${theme.inkMuted.replace('#', '%23')}' d='M0 0h10L5 6z'/></svg>")`,
+      backgroundRepeat: 'no-repeat',
+      backgroundPosition: 'right 8px center',
+      backgroundSize: '10px 6px',
     }}>
       {users.map(u => <option key={u.id} value={u.id}>{u.id} · {u.name}</option>)}
     </select>
