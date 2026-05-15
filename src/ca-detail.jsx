@@ -630,6 +630,24 @@ function CancelAccountModal({ client, theme, cancelReasons, onSave, onClose }) {
     }
   };
 
+  // Bobby 2026-05-15: "i cannot remove the cancnellation now. i need a way
+  // to delete also." Reactivate clears both cancel_date and cancel_reason
+  // so the client flips back to Active. Confirmation is in-modal (two-tap)
+  // so admins don't accidentally wipe a real cancellation.
+  const [confirmingReactivate, setConfirmingReactivate] = React.useState(false);
+  const handleReactivate = async () => {
+    if (!confirmingReactivate) { setConfirmingReactivate(true); return; }
+    setSaving(true);
+    setErr('');
+    try {
+      await onSave(client.id, null, null);
+    } catch (e) {
+      setErr('Reactivation failed. Try again.');
+      setSaving(false);
+      setConfirmingReactivate(false);
+    }
+  };
+
   return (
     <div
       onClick={onClose}
@@ -742,6 +760,62 @@ function CancelAccountModal({ client, theme, cancelReasons, onSave, onClose }) {
             }}
           >{saving ? 'Saving…' : 'Save'}</button>
         </div>
+
+        {/* Reactivate — only in edit mode. Two-tap confirmation so admins
+            don't accidentally wipe a real cancellation. Bobby 2026-05-15. */}
+        {isEdit && (
+          <div style={{
+            marginTop: 16, paddingTop: 14,
+            borderTop: `1px solid ${theme.rule}`,
+          }}>
+            {confirmingReactivate ? (
+              <div>
+                <div style={{ fontSize: 12, color: theme.ink, marginBottom: 8, lineHeight: 1.4 }}>
+                  Reactivate this account? This clears the cancel date and reason.
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingReactivate(false)}
+                    disabled={saving}
+                    style={{
+                      flex: 1, padding: '10px 14px', borderRadius: 10,
+                      background: 'transparent', color: theme.ink,
+                      border: `1.5px solid ${theme.rule}`,
+                      fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+                      cursor: saving ? 'not-allowed' : 'pointer',
+                    }}
+                  >Not now</button>
+                  <button
+                    type="button"
+                    onClick={handleReactivate}
+                    disabled={saving}
+                    style={{
+                      flex: 1.2, padding: '10px 14px', borderRadius: 10,
+                      background: '#2E7D32', color: '#FFFFFF',
+                      border: 'none',
+                      fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
+                      cursor: saving ? 'not-allowed' : 'pointer',
+                      boxShadow: '0 4px 12px rgba(46,125,50,0.30)',
+                    }}
+                  >{saving ? 'Reactivating…' : 'Yes, reactivate'}</button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleReactivate}
+                style={{
+                  width: '100%', padding: '11px 16px', borderRadius: 10,
+                  background: 'transparent', color: '#2E7D32',
+                  border: '1.5px solid rgba(67, 160, 71, 0.5)',
+                  fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >Reactivate account</button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

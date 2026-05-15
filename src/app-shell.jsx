@@ -511,17 +511,18 @@ function App() {
   // cancelled clients (just open the same modal; it pre-fills existing values).
   const cancelAccount = async (clientId, cancelDate, cancelReason) => {
     const updates = { cancelDate, cancelReason };
+    const isReactivating = cancelDate == null && cancelReason == null;
     setState(s => ({ ...s, clients: s.clients.map(c => c.id === clientId ? { ...c, ...updates } : c) }));
     if (CABT_getApiMode() === 'supabase') {
       try {
         await CABT_api.updateClient(clientId, updates);
-        showToast('Account updated');
+        showToast(isReactivating ? 'Account reactivated' : 'Account updated');
       } catch (e) {
         showToast('Save failed');
         console.error('[cancelAccount]', e);
       }
     } else {
-      showToast('Account updated');
+      showToast(isReactivating ? 'Account reactivated' : 'Account updated');
     }
   };
 
