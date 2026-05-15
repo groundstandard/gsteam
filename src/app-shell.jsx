@@ -263,7 +263,10 @@ function App() {
   // route through the Edit Requests queue instead of touching the row
   // directly. Admins / owners keep direct-edit. New rows always insert
   // directly regardless of role.
-  const isAdminAuth = ['owner', 'admin'].includes(authedProfile?.role);
+  // Bobby 2026-05-15: also fall back to state.role so admins still get
+  // admin-only buttons (e.g. Cancel Account) before authedProfile loads.
+  const isAdminAuth = ['owner', 'admin'].includes(authedProfile?.role)
+                   || ['owner', 'admin'].includes(state?.role);
   const computeFieldDiff = (original, next) => {
     if (!original) return {};
     // Bobby 2026-05-12: field_changes JSONB MUST use snake_case column names

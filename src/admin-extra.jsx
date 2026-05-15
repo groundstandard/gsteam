@@ -2348,6 +2348,15 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
   React.useEffect(() => { lsSet('dash:cols:v2', Array.from(visibleCols)); }, [visibleCols]);
   const [chooserOpen, setChooserOpen] = React.useState(false);
 
+  // Bobby 2026-05-15: sticky Client column was covering data on phones.
+  // Make its width adjustable via a drag handle on the right edge of the
+  // column header. Persisted per browser; clamped to 80–360px.
+  const [clientColWidth, setClientColWidth] = React.useState(() => {
+    const v = Number(lsGet('dash:clientColWidth', 160));
+    return Number.isFinite(v) ? Math.max(80, Math.min(360, v)) : 160;
+  });
+  React.useEffect(() => { lsSet('dash:clientColWidth', clientColWidth); }, [clientColWidth]);
+
   // Reset page index whenever the visible result-set might shrink.
   React.useEffect(() => { setPageIndex(0); }, [search, includeCancelled, pageSize, tierFilter.join(','), caFilter]);
 
@@ -2594,7 +2603,32 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
   // (top + left corner — must overlay both header and sticky column),
   // sticky body cells get z-index 1 (overlay normal scrolling cells), normal
   // header cells get z-index 2.
-  const Th = ({ k, children, align = 'left', width, sticky }) => {
+  // Drag-to-resize handler — Bobby 2026-05-15. Used on the sticky Client
+  // column header. Tracks pointer delta from drag start and clamps the
+  // resulting width to [80, 360]px. Works for both mouse and touch.
+  const startResize = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX != null ? e.clientX : (e.touches && e.touches[0]?.clientX) || 0;
+    const startWidth = clientColWidth;
+    const onMove = (mv) => {
+      const x = mv.clientX != null ? mv.clientX : (mv.touches && mv.touches[0]?.clientX) || 0;
+      const next = Math.max(80, Math.min(360, startWidth + (x - startX)));
+      setClientColWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+  };
+
+  const Th = ({ k, children, align = 'left', width, sticky, resizable }) => {
     const active = sortKey === k;
     return (
       <th onClick={() => setSort(k)} style={{
@@ -2608,16 +2642,37 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
         left: sticky ? 0 : undefined,
         zIndex: sticky ? 3 : 2,
         whiteSpace: 'nowrap', userSelect: 'none', width,
+        minWidth: width, maxWidth: width,
         // Right edge shadow on the sticky column so its boundary is visible
         // when the next column scrolls behind it.
         boxShadow: sticky ? `inset -1px 0 0 ${theme.rule}` : undefined,
       }}>
-        {children}
+        <span style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle' }}>
+          {children}
+        </span>
         {active && <span style={{ marginLeft: 4, opacity: 0.7 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+        {resizable && (
+          <span
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={startResize}
+            onTouchStart={startResize}
+            title="Drag to resize"
+            style={{
+              position: 'absolute', top: 0, right: 0, bottom: 0,
+              width: 14, cursor: 'col-resize',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              WebkitTapHighlightColor: 'transparent', touchAction: 'none',
+            }}
+          >
+            <span style={{
+              width: 2, height: '50%', background: theme.inkMuted, opacity: 0.4, borderRadius: 1,
+            }}/>
+          </span>
+        )}
       </th>
     );
   };
-  const Td = ({ children, align = 'left', mono, color, bold, status, sticky }) => (
+  const Td = ({ children, align = 'left', mono, color, bold, status, sticky, width }) => (
     <td style={{
       padding: '10px 8px', fontSize: 12,
       color: color || theme.ink,
@@ -2625,6 +2680,9 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
       fontVariantNumeric: mono ? 'tabular-nums' : 'normal',
       fontWeight: bold ? 700 : 500,
       textAlign: align, whiteSpace: 'nowrap',
+      overflow: width ? 'hidden' : undefined,
+      textOverflow: width ? 'ellipsis' : undefined,
+      width, minWidth: width, maxWidth: width,
       borderBottom: `1px solid ${theme.rule}`,
       position: sticky ? 'sticky' : undefined,
       left: sticky ? 0 : undefined,
@@ -3091,7 +3149,9 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
             <tr>
               {visibleColumnObjs.map(col => (
                 <Th key={col.id} k={col.sortKey || col.id} align={col.align}
-                    sticky={col.id === 'name'}>{col.label}</Th>
+                    sticky={col.id === 'name'}
+                    width={col.id === 'name' ? clientColWidth : undefined}
+                    resizable={col.id === 'name'}>{col.label}</Th>
               ))}
             </tr>
           </thead>
@@ -3105,7 +3165,8 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
                   style={{ cursor: 'pointer' }}>
                 {visibleColumnObjs.map(col => (
                   <Td key={col.id} align={col.align} mono={col.mono}
-                      sticky={col.id === 'name'}>{col.render(r)}</Td>
+                      sticky={col.id === 'name'}
+                      width={col.id === 'name' ? clientColWidth : undefined}>{col.render(r)}</Td>
                 ))}
               </tr>
             ))}
