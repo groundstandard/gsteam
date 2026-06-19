@@ -1176,7 +1176,26 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
     { id: 'leadsSigned',    label: 'Closed', group: 'Funnel', align: 'right', sortKey: 'leadsSigned',    mono: true, render: (r) => fmt(r.leadsSigned) },
     // Students
     { id: 'studentsStart',     label: 'Start',     group: 'Students', align: 'right', sortKey: 'studentsStart',     mono: true, render: (r) => fmt(r.studentsStart) },
-    { id: 'studentsAcquired',  label: 'Acquired',  group: 'Students', align: 'right', sortKey: 'studentsAcquired',  mono: true, render: (r) => fmt(r.studentsAcquired) },
+    // Bobby 2026-06-19 (Loom): "Closed is when somebody shows up and then they
+    // sign up — and acquired should be the same thing then." So Acquired and
+    // Closed (leadsSigned) are expected to match per period; when both are
+    // logged and they diverge, surface an amber dot + explanation so the
+    // mismatch is caught as a data-entry issue, not silently trusted.
+    { id: 'studentsAcquired',  label: 'Acquired',  group: 'Students', align: 'right', sortKey: 'studentsAcquired',  mono: true, render: (r) => {
+        const a = r.studentsAcquired, c = r.leadsSigned;
+        const mismatch = a != null && c != null && Number(a) !== Number(c);
+        return (
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }}>
+            {fmt(a)}
+            {mismatch && (
+              <span
+                title={`Closed = ${fmt(c)}, Acquired = ${fmt(a)} (off by ${fmt(Math.abs(Number(a) - Number(c)))}). Bobby expects these to match — likely a logging gap.`}
+                style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 4, background: '#E0A100', cursor: 'help' }}
+              />
+            )}
+          </span>
+        );
+      } },
     { id: 'studentsCancelled', label: 'Cancel',    group: 'Students', align: 'right', sortKey: 'studentsCancelled', mono: true, render: (r) => fmt(r.studentsCancelled) },
     // End = Start + Acquired − Cancel. Makes the running headcount math
     // explicit so a mismatch with the next period's Start is obviously a
