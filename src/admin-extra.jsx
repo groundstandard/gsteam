@@ -342,9 +342,15 @@ function AdminRevenueLedger({ state, theme }) {
   const cellFor = (clientId, month) => {
     const m = state.monthlyMetrics.find(mm => mm.clientId === clientId && mm.month === month);
     if (!m) return null;
-    return m.clientGrossRevenue != null && m.clientGrossRevenue !== ''
+    const raw = m.clientGrossRevenue != null && m.clientGrossRevenue !== ''
       ? m.clientGrossRevenue
       : m.clientMRR;
+    // Supabase serialises numeric columns as STRINGS, so the totals reduce
+    // below (`s + cellFor()`) was string-concatenating, not adding —
+    // "12815" + "112" → "12815112". Coerce to a real number here.
+    // (Bobby 2026-06-19 Loom: "monthly recurring revenue is 12,815,112…
+    // none of those numbers are accurate.")
+    return raw == null || raw === '' ? null : (Number(raw) || 0);
   };
 
   // Totals
@@ -617,7 +623,7 @@ function AdminClientCalc({ state, theme, clientId, navigate, onSetCadence, onSet
     .slice(0, 3);
 
   // Reverse-engineered inputs feeding each sub-score
-  const avgMRR = recent.length ? recent.reduce((s, m) => s + m.clientMRR, 0) / recent.length : 0;
+  const avgMRR = recent.length ? recent.reduce((s, m) => s + (Number(m.clientMRR) || 0), 0) / recent.length : 0;
   const avgAdRatio = recent.length ? recent.reduce((s, m) => s + (m.adSpend / Math.max(m.clientGrossRevenue, 1)), 0) / recent.length : 0;
   const fAvgs = recent.length ? {
     booking: recent.reduce((s, m) => s + (m.apptsBooked / Math.max(m.leadsGenerated, 1)), 0) / recent.length,
