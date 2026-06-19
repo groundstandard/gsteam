@@ -888,8 +888,19 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
   const [chooserOpen, setChooserOpen] = React.useState(false);
   const [expanded, setExpanded] = React.useState(() => new Set());
 
-  const DEFAULT_VISIBLE = ['date', 'type', 'caName', 'mrr', 'adSpend', 'leadsGenerated', 'apptsBooked', 'leadsShowed', 'leadsSigned', 'studentsCancelled', 'notes'];
-  const [visibleCols, setVisibleCols] = React.useState(() => new Set(lsGet('clientDash:cols', DEFAULT_VISIBLE)));
+  const DEFAULT_VISIBLE = ['date', 'type', 'caName', 'mrr', 'adSpend', 'leadsGenerated', 'apptsBooked', 'leadsShowed', 'leadsSigned', 'studentsCancelled', 'studentsEnd', 'notes'];
+  const [visibleCols, setVisibleCols] = React.useState(() => {
+    const stored = lsGet('clientDash:cols', DEFAULT_VISIBLE);
+    // One-time, non-destructive migration: anyone already tracking student
+    // headcount gets the new running-total "End" column surfaced beside it,
+    // without resetting their other column choices (Bobby 2026-06-19 Loom).
+    if (Array.isArray(stored)
+        && (stored.includes('studentsStart') || stored.includes('studentsAcquired') || stored.includes('studentsCancelled'))
+        && !stored.includes('studentsEnd')) {
+      return new Set([...stored, 'studentsEnd']);
+    }
+    return new Set(stored);
+  });
   React.useEffect(() => { lsSet('clientDash:cols', Array.from(visibleCols)); }, [visibleCols]);
 
   // Build the union of all events for THIS client, normalized.
@@ -1023,8 +1034,16 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
   // toggle on Week/Month still affects the date column label format (week-of
   // / month label) and the period summary in the header.
   const rows = React.useMemo(() => {
+    // End-of-period student count = Start + Acquired − Cancelled. Shown so the
+    // running math is transparent (next period's Start should match this End).
+    const withEnd = (e) => ({
+      ...e,
+      studentsEnd: e.studentsStart == null
+        ? null
+        : Number(e.studentsStart) + (Number(e.studentsAcquired) || 0) - (Number(e.studentsCancelled) || 0),
+    });
     if (cadence === 'all' || cadence === 'week' || cadence === 'month') {
-      return events.map(e => ({ ...e, _isGroup: false, _children: [] }));
+      return events.map(e => ({ ...withEnd(e), _isGroup: false, _children: [] }));
     }
     const groups = new Map();
     events.forEach(e => {
@@ -1042,6 +1061,18 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
         }
         return best;
       };
+      // First non-null value in the period (earliest by date). Used for
+      // "Start" — a quarter's starting student count is the FIRST month's
+      // start, not the last. (Bobby 2026-06-19 Loom: the rolled-up Start was
+      // showing the latest month, so the period math never reconciled.)
+      const first = (key) => {
+        let best = null, bestDate = null;
+        for (const x of list) {
+          if (x[key] == null) continue;
+          if (!bestDate || x.sortDate < bestDate) { best = x[key]; bestDate = x.sortDate; }
+        }
+        return best;
+      };
       const surveyScores = list.map(x => x.surveyScore).filter(v => v != null);
       const avgSurvey = surveyScores.length ? surveyScores.reduce((a, b) => a + b, 0) / surveyScores.length : null;
       const counts = list.reduce((acc, x) => { acc[x.kind] = (acc[x.kind] || 0) + 1; return acc; }, {});
@@ -1054,22 +1085,34 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
         sortDate: k,
         groupLabel: periodLabel(k),
         caId: '', caName: list[0].caName,
+        // MRR is a run-rate snapshot → the period's MRR is the latest month's.
+        // Gross revenue is a FLOW (money earned during the period) → sum the
+        // months so a 3-month quarter totals all three, not just the last
+        // (Bobby 2026-06-19 Loom: "if I go to quarter one, that doesn't add up").
         mrr: latest('mrr'),
-        grossRevenue: latest('grossRevenue'),
+        grossRevenue: sum('grossRevenue'),
         adSpend: sum('adSpend'),
         leadCost: (sum('leadsGenerated') > 0 ? sum('adSpend') / sum('leadsGenerated') : null),
         leadsGenerated: sum('leadsGenerated'),
         apptsBooked:    sum('apptsBooked'),
         leadsShowed:    sum('leadsShowed'),
         leadsSigned:    sum('leadsSigned'),
-        studentsStart:  latest('studentsStart'),
+        // Start = first month's opening count; End = Start + acquired − cancelled
+        // across the period, so the running student math is visible and the
+        // next period's Start should equal this period's End.
+        studentsStart:  first('studentsStart'),
         studentsAcquired: sum('studentsAcquired'),
         studentsCancelled: sum('studentsCancelled'),
+        studentsEnd: (() => {
+          const st = first('studentsStart');
+          if (st == null) return null;
+          return Number(st) + sum('studentsAcquired') - sum('studentsCancelled');
+        })(),
         surveyScore: avgSurvey,
         notes: typeSummary,
         flaggedInactive: list.some(x => x.flaggedInactive),
         _isGroup: true,
-        _children: list,
+        _children: list.map(withEnd),
       };
     });
   }, [events, cadence]);
@@ -1135,6 +1178,10 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
     { id: 'studentsStart',     label: 'Start',     group: 'Students', align: 'right', sortKey: 'studentsStart',     mono: true, render: (r) => fmt(r.studentsStart) },
     { id: 'studentsAcquired',  label: 'Acquired',  group: 'Students', align: 'right', sortKey: 'studentsAcquired',  mono: true, render: (r) => fmt(r.studentsAcquired) },
     { id: 'studentsCancelled', label: 'Cancel',    group: 'Students', align: 'right', sortKey: 'studentsCancelled', mono: true, render: (r) => fmt(r.studentsCancelled) },
+    // End = Start + Acquired − Cancel. Makes the running headcount math
+    // explicit so a mismatch with the next period's Start is obviously a
+    // data-entry gap, not a calculation error (Bobby 2026-06-19 Loom).
+    { id: 'studentsEnd',       label: 'End',       group: 'Students', align: 'right', sortKey: 'studentsEnd',       mono: true, render: (r) => fmt(r.studentsEnd) },
     // Survey
     { id: 'surveyScore', label: 'Survey',     group: 'Other',  align: 'right', sortKey: 'surveyScore', mono: true, render: (r) => r.surveyScore == null ? '—' : (r.surveyScore).toFixed(1) },
     // Notes (truncated)
@@ -1147,31 +1194,56 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
   const COLUMN_GROUPS = ['When', 'Money', 'Funnel', 'Students', 'Other'];
   const visibleColumnObjs = COLUMNS.filter(c => visibleCols.has(c.id));
 
-  const Th = ({ k, children, align = 'left' }) => {
+  // Width of the leading expand/collapse toggle column (quarter/year only).
+  // The frozen Period column sits to its right, so its left offset shifts by
+  // this much when the toggle is present.
+  const TOGGLE_W = 28;
+  const hasToggle = (cadence === 'quarter' || cadence === 'year');
+  // Left offset for the frozen Period column.
+  const PERIOD_LEFT = hasToggle ? TOGGLE_W : 0;
+
+  // Bobby 2026-06-19 (Loom): "I want to see the dates / the period to stay
+  // there, just like we do for the accounts." The wide log table scrolls
+  // horizontally, so freeze the Period column (and the toggle gutter) to the
+  // left — mirrors the all-accounts dashboard's frozen Client column.
+  const Th = ({ k, children, align = 'left', stickyLeft }) => {
     const active = sortKey === k;
+    const isSticky = stickyLeft != null;
     return (
       <th onClick={() => setSort(k)} style={{
         textAlign: align, padding: '10px 8px',
         fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase',
         color: active ? theme.ink : theme.inkMuted,
         cursor: 'pointer', borderBottom: `1px solid ${theme.rule}`,
-        background: theme.bgElev, position: 'sticky', top: 0, zIndex: 1,
+        background: theme.bgElev, position: 'sticky', top: 0,
+        left: isSticky ? stickyLeft : undefined,
+        zIndex: isSticky ? 3 : 1,
+        boxShadow: isSticky ? `inset -1px 0 0 ${theme.rule}` : undefined,
         whiteSpace: 'nowrap', userSelect: 'none',
       }}>
         {children}{active && <span style={{ marginLeft: 4, opacity: 0.7 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
       </th>
     );
   };
-  const Td = ({ children, align = 'left', mono }) => (
-    <td style={{
-      padding: '10px 8px', fontSize: 12,
-      color: theme.ink,
-      fontFamily: mono ? (theme.mono || 'monospace') : 'inherit',
-      fontVariantNumeric: mono ? 'tabular-nums' : 'normal',
-      textAlign: align, whiteSpace: 'nowrap',
-      borderBottom: `1px solid ${theme.rule}`,
-    }}>{children}</td>
-  );
+  const Td = ({ children, align = 'left', mono, stickyLeft }) => {
+    const isSticky = stickyLeft != null;
+    return (
+      <td style={{
+        padding: '10px 8px', fontSize: 12,
+        color: theme.ink,
+        fontFamily: mono ? (theme.mono || 'monospace') : 'inherit',
+        fontVariantNumeric: mono ? 'tabular-nums' : 'normal',
+        textAlign: align, whiteSpace: 'nowrap',
+        borderBottom: `1px solid ${theme.rule}`,
+        position: isSticky ? 'sticky' : undefined,
+        left: isSticky ? stickyLeft : undefined,
+        zIndex: isSticky ? 1 : undefined,
+        // Opaque background so scrolled columns don't bleed through.
+        background: isSticky ? theme.surface : undefined,
+        boxShadow: isSticky ? `inset -1px 0 0 ${theme.rule}` : undefined,
+      }}>{children}</td>
+    );
+  };
 
   // Tap an event row → drill into the right edit form.
   const drillRoute = {
@@ -1241,9 +1313,9 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              {(cadence === 'quarter' || cadence === 'year') && <th style={{ width: 28, padding: '10px 4px', borderBottom: `1px solid ${theme.rule}`, background: theme.bgElev, position: 'sticky', top: 0, zIndex: 1 }}/>}
+              {hasToggle && <th style={{ width: TOGGLE_W, padding: '10px 4px', borderBottom: `1px solid ${theme.rule}`, background: theme.bgElev, position: 'sticky', top: 0, left: 0, zIndex: 3 }}/>}
               {visibleColumnObjs.map(col => (
-                <Th key={col.id} k={col.sortKey || col.id} align={col.align}>{col.label}</Th>
+                <Th key={col.id} k={col.sortKey || col.id} align={col.align} stickyLeft={col.id === 'date' ? PERIOD_LEFT : undefined}>{col.label}</Th>
               ))}
             </tr>
           </thead>
@@ -1256,13 +1328,13 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
               return (
                 <React.Fragment key={r.id}>
                   <tr onClick={() => onEventClick(r)} style={{ cursor: 'pointer' }}>
-                    {(cadence === 'quarter' || cadence === 'year') && (
-                      <td style={{ padding: '10px 4px', borderBottom: `1px solid ${theme.rule}`, color: theme.inkMuted, fontSize: 14, textAlign: 'center' }}>
+                    {hasToggle && (
+                      <td style={{ padding: '10px 4px', borderBottom: `1px solid ${theme.rule}`, color: theme.inkMuted, fontSize: 14, textAlign: 'center', position: 'sticky', left: 0, zIndex: 1, background: theme.surface }}>
                         {r._isGroup && r._children.length > 0 ? (isExpanded ? '▾' : '▸') : ''}
                       </td>
                     )}
                     {visibleColumnObjs.map(col => (
-                      <Td key={col.id} align={col.align} mono={col.mono}>{col.render(r)}</Td>
+                      <Td key={col.id} align={col.align} mono={col.mono} stickyLeft={col.id === 'date' ? PERIOD_LEFT : undefined}>{col.render(r)}</Td>
                     ))}
                   </tr>
                   {r._isGroup && isExpanded && r._children.map(child => (
@@ -1272,8 +1344,10 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
                           if (route) navigate(route, { clientId: client.id, editingId: child.id });
                         }}
                         style={{ cursor: drillRoute[child.kind] ? 'pointer' : 'default', background: theme.bgElev }}>
-                      <td style={{ padding: '8px 4px', borderBottom: `1px solid ${theme.rule}` }}/>
-                      {visibleColumnObjs.map(col => (
+                      <td style={{ width: TOGGLE_W, padding: '8px 4px', borderBottom: `1px solid ${theme.rule}`, position: 'sticky', left: 0, zIndex: 1, background: theme.bgElev }}/>
+                      {visibleColumnObjs.map(col => {
+                        const isDate = col.id === 'date';
+                        return (
                         <td key={col.id} style={{
                           padding: '8px 8px', fontSize: 11,
                           color: theme.inkSoft,
@@ -1281,9 +1355,15 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
                           fontVariantNumeric: col.mono ? 'tabular-nums' : 'normal',
                           textAlign: col.align, whiteSpace: 'nowrap',
                           borderBottom: `1px solid ${theme.rule}`,
-                          paddingLeft: col.id === 'date' ? 24 : 8,
+                          paddingLeft: isDate ? 24 : 8,
+                          position: isDate ? 'sticky' : undefined,
+                          left: isDate ? PERIOD_LEFT : undefined,
+                          zIndex: isDate ? 1 : undefined,
+                          background: isDate ? theme.bgElev : undefined,
+                          boxShadow: isDate ? `inset -1px 0 0 ${theme.rule}` : undefined,
                         }}>{col.render({ ...child, _isGroup: false })}</td>
-                      ))}
+                        );
+                      })}
                     </tr>
                   ))}
                 </React.Fragment>

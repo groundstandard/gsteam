@@ -202,8 +202,12 @@ function CAHome({ state, ca, theme, density, navigate }) {
               color: theme.accentInk,
               border: `1px solid ${theme.accentInk}1A`,
               borderRadius: 16,
-              padding: '14px 10px 12px',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+              // Bobby 2026-06-19 (Loom): "the circles go to the edges — I want a
+              // margin and buffer between the assets inside any card and the
+              // edges, never up against them." Roomier padding so the ring has
+              // clear breathing space on all sides.
+              padding: '20px 16px 16px',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
               boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
             }}>
               <ScoreRing
