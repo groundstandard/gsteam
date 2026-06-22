@@ -400,11 +400,18 @@ function App() {
           else        await CABT_api.submitMonthlyMetrics(row);
         }
         showToast(msg);
+        navigate('back');
       } catch (e) {
-        showToast('Save failed');
+        // Kurt 2026-06-22: "things I'm adding aren't saving." The failure was
+        // silent (generic toast) and we navigated back regardless, so a row
+        // looked saved until a reload dropped it. Roll back the optimistic
+        // insert, stay on the form, and show the real reason.
+        if (!isEdit) {
+          setState(s => ({ ...s, [stateKey]: (s[stateKey] || []).filter(m => m.id !== row.id) }));
+        }
         console.error('[submitMetrics]', e);
+        showToast('Save failed: ' + (e?.message || String(e)));
       }
-      navigate('back');
     } else {
       queueOrApply(mutator, msg);
     }
@@ -504,7 +511,19 @@ function App() {
   const applyEditDecision = (reqId, status) => {
     setState(s => ({ ...s, editRequests: (s.editRequests || []).map(r => r.id === reqId ? { ...r, status } : r) }));
   };
-  const assignCA = (cid, caId) => { setState(s => ({ ...s, clients: s.clients.map(c => c.id === cid ? { ...c, assignedCA: caId } : c) })); showToast('CA assigned'); };
+  const assignCA = async (cid, caId) => {
+    // Bobby 2026-06-22: assigning a CA "still shows not assigned" after going
+    // back in. Root cause: this only updated local state and never persisted
+    // to Supabase, so a reload reverted it. Now it writes through the API,
+    // matching setCadence / setClientRates, and surfaces any failure.
+    setState(s => ({ ...s, clients: s.clients.map(c => c.id === cid ? { ...c, assignedCA: caId } : c) }));
+    if (CABT_getApiMode() === 'supabase') {
+      try { await CABT_api.assignCA(cid, caId); showToast('CA assigned'); }
+      catch (e) { showToast('Assign failed: ' + (e?.message || String(e))); console.error('[assignCA]', e); }
+    } else {
+      showToast('CA assigned');
+    }
+  };
   const setCadence = async (cid, cadence) => {
     setState(s => ({ ...s, clients: s.clients.map(c => c.id === cid ? { ...c, loggingCadence: cadence } : c) }));
     if (CABT_getApiMode() === 'supabase') {
