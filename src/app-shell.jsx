@@ -426,8 +426,19 @@ function App() {
         if (isEdit) await CABT_api.updateEvent(row.id, row);
         else        await CABT_api.submitEvent(row);
         showToast('Event saved');
-      } catch (e) { showToast('Save failed'); console.error('[submitEvent]', e); }
-      navigate('back');
+        navigate('back');
+      } catch (e) {
+        // Kurt 2026-06-22: "events are not saving." The failure was silent —
+        // the row was added to local state optimistically and we navigated
+        // back regardless, so it looked saved until a reload dropped it.
+        // Now: roll back the optimistic insert, surface the real error, and
+        // stay on the form so the entry isn't lost.
+        if (!isEdit) {
+          setState(s => ({ ...s, growthEvents: (s.growthEvents || []).filter(ev => ev.id !== row.id) }));
+        }
+        console.error('[submitEvent]', e);
+        showToast('Save failed: ' + (e?.message || String(e)));
+      }
     } else {
       queueOrApply(mutator, 'Event saved');
     }
