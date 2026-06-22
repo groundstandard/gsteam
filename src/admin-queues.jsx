@@ -29,12 +29,14 @@ function AdminEditApprovals({ state, theme, onEditDecided }) {
   const requests = state.editRequests || SEED_EDIT_REQUESTS(state);
   const [filter, setFilter] = React.useState('pending'); // pending | approved | rejected
   const [busy, setBusy] = React.useState(null);
+  const [err, setErr] = React.useState(null);
 
   const filtered = requests.filter(r => filter === 'all' || r.status === filter);
   const pending = requests.filter(r => r.status === 'pending').length;
 
   const decide = async (req, status) => {
     setBusy(req.id);
+    setErr(null);
     if (CABT_getApiMode() === 'supabase') {
       try {
         if (status === 'approved') await CABT_api.approveEditRequest(req.id);
@@ -44,9 +46,16 @@ function AdminEditApprovals({ state, theme, onEditDecided }) {
         }
         // Reflect the decision immediately rather than waiting for the realtime
         // round-trip (Bobby 2026-06-22: approving felt slow). The realtime push
-        // still arrives and re-applies the same status idempotently.
+        // still arrives and re-applies the same status idempotently. Manual
+        // approval is unchanged — this only fires after a successful click.
         if (typeof onEditDecided === 'function') onEditDecided(req.id, status);
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        // Bobby 2026-06-22: "it was not working when I tried to approve." The
+        // failure used to be swallowed (console-only), so a failed approve
+        // looked like nothing happened. Surface it so the cause is visible.
+        console.error('[edit request decision]', e);
+        setErr({ id: req.id, message: e?.message || String(e) });
+      }
     } else if (typeof onEditDecided === 'function') {
       onEditDecided(req.id, status);
     }
@@ -65,6 +74,16 @@ function AdminEditApprovals({ state, theme, onEditDecided }) {
         { value: 'rejected', label: 'Rejected' },
         { value: 'all',      label: 'All' },
       ]}/>
+
+      {err && (
+        <div style={{
+          background: STATUS.red + '15', color: STATUS.red,
+          border: `1px solid ${STATUS.red}33`, borderRadius: 8,
+          padding: '10px 14px', fontSize: 13, lineHeight: 1.45,
+        }}>
+          <strong>Approve/Reject failed.</strong> {err.message}
+        </div>
+      )}
 
       {filtered.length === 0 && (
         <Card theme={theme}>
