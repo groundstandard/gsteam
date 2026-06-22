@@ -485,6 +485,14 @@ function App() {
   const submitAdjustment = (row) => queueOrApply(s => ({ ...s, adjustments: [...s.adjustments, row] }), 'Adjustment submitted');
   const approveAdj = (id) => { setState(s => ({ ...s, adjustments: s.adjustments.map(a => a.id === id ? { ...a, status: 'Paid' } : a) })); showToast('Approved'); };
   const rejectAdj = (id) => { setState(s => ({ ...s, adjustments: s.adjustments.map(a => a.id === id ? { ...a, status: 'Rejected' } : a) })); showToast('Rejected'); };
+  // Optimistically reflect an edit-request decision in local state the moment
+  // the API call succeeds, instead of waiting for the realtime push to round-
+  // trip (Bobby 2026-06-22: approving felt slow — the card lingered in Pending
+  // until realtime caught up). Idempotent: when realtime does arrive it maps
+  // the same id to the same status, so no double-apply.
+  const applyEditDecision = (reqId, status) => {
+    setState(s => ({ ...s, editRequests: (s.editRequests || []).map(r => r.id === reqId ? { ...r, status } : r) }));
+  };
   const assignCA = (cid, caId) => { setState(s => ({ ...s, clients: s.clients.map(c => c.id === cid ? { ...c, assignedCA: caId } : c) })); showToast('CA assigned'); };
   const setCadence = async (cid, cadence) => {
     setState(s => ({ ...s, clients: s.clients.map(c => c.id === cid ? { ...c, loggingCadence: cadence } : c) }));
@@ -662,8 +670,8 @@ function App() {
       // dashboard page"). Approvals moved to its own route + tab.
       case 'home':        return <AdminDashboard state={state} theme={theme} navigate={navigate}/>;
       case 'dashboard':   return <AdminDashboard state={state} theme={theme} navigate={navigate}/>;
-      case 'approvals':   return <AdminApprovals state={state} theme={theme} navigate={navigate} onApprove={approveAdj} onReject={rejectAdj} onAssignCA={assignCA}/>;
-      case 'edits':       return <AdminEditApprovals state={state} theme={theme}/>;
+      case 'approvals':   return <AdminApprovals state={state} theme={theme} navigate={navigate} onApprove={approveAdj} onReject={rejectAdj} onAssignCA={assignCA} onEditDecided={applyEditDecision}/>;
+      case 'edits':       return <AdminEditApprovals state={state} theme={theme} onEditDecided={applyEditDecision}/>;
       case 'reviews':     return <AdminReviewsInbox state={state} theme={theme}/>;
       case 'bonus':       return <AdminAnnualBonus state={state} theme={theme}/>;
       case 'revenue':     return <AdminRevenueLedger state={state} theme={theme}/>;

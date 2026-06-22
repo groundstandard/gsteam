@@ -23,7 +23,7 @@ function Pill({ tone = 'gray', theme, children }) {
 }
 
 // ── Edit Approvals ──────────────────────────────────────────────────────
-function AdminEditApprovals({ state, theme }) {
+function AdminEditApprovals({ state, theme, onEditDecided }) {
   // Read from state directly so realtime updates flow through. Local-mode
   // dev shows the seed when state.editRequests isn't present.
   const requests = state.editRequests || SEED_EDIT_REQUESTS(state);
@@ -42,10 +42,14 @@ function AdminEditApprovals({ state, theme }) {
           const sb = await CABT_sb();
           await sb.from('edit_requests').update({ status: 'rejected' }).eq('id', req.id);
         }
+        // Reflect the decision immediately rather than waiting for the realtime
+        // round-trip (Bobby 2026-06-22: approving felt slow). The realtime push
+        // still arrives and re-applies the same status idempotently.
+        if (typeof onEditDecided === 'function') onEditDecided(req.id, status);
       } catch (e) { console.error(e); }
+    } else if (typeof onEditDecided === 'function') {
+      onEditDecided(req.id, status);
     }
-    // Realtime push will update state.editRequests automatically; no local
-    // setState needed.
     setBusy(null);
   };
 

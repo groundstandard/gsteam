@@ -1,6 +1,6 @@
 // admin-app.jsx — Admin persona screens
 
-function AdminApprovals({ state, theme, navigate, onApprove, onReject, onAssignCA }) {
+function AdminApprovals({ state, theme, navigate, onApprove, onReject, onAssignCA, onEditDecided }) {
   const pending = state.adjustments.filter(a => a.status === 'Pending');
   const unassigned = state.clients.filter(c => !c.assignedCA && !c.cancelDate);
   const cas = state.cas.filter(c => c.active);
@@ -24,6 +24,10 @@ function AdminApprovals({ state, theme, navigate, onApprove, onReject, onAssignC
           const sb = await CABT_sb();
           await sb.from('edit_requests').update({ status: 'rejected' }).eq('id', req.id);
         }
+        // Reflect the decision immediately instead of waiting for the realtime
+        // push (Bobby 2026-06-22: approving felt slow). Realtime still arrives
+        // and re-applies the same status idempotently.
+        if (typeof onEditDecided === 'function') onEditDecided(req.id, status);
       } catch (e) {
         // Bobby 2026-05-12: silent catch hid the real failure. Surface the
         // error to the UI so the admin sees something happened instead of
@@ -31,6 +35,8 @@ function AdminApprovals({ state, theme, navigate, onApprove, onReject, onAssignC
         console.error('[edit request decision]', e);
         setEditErr({ id: req.id, message: e?.message || String(e) });
       }
+    } else if (typeof onEditDecided === 'function') {
+      onEditDecided(req.id, status);
     }
     setEditBusy(null);
   };
