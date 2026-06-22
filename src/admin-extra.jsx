@@ -2557,7 +2557,6 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
       showRate:       qBooked > 0 ? qShowed / qBooked : null,
       closeRate:      qShowed > 0 ? qSigned / qShowed : null,
       studentsStart:  firstStart,
-      studentsAcquired:  sumQ('studentsAcquired'),
       studentsCancelled: qCancel,
       attritionRate:   firstStart > 0 ? qCancel / firstStart : null,
       composite:       sub.performance != null ? sub.performance : null,
@@ -2790,8 +2789,7 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
     // Students
     { id: 'studentsStart', label: 'Students',    group: 'Students', align: 'right', sortKey: 'studentsStart',
       mono: true, render: (r) => fmt(r.studentsStart) },
-    { id: 'studentsAcquired', label: 'Acquired', group: 'Students', align: 'right', sortKey: 'studentsAcquired',
-      mono: true, render: (r) => fmt(r.studentsAcquired) },
+    // "Acquired" removed 2026-06-19 (Bobby, Loom): redundant with "Closed".
     { id: 'studentsCancelled', label: 'Cancel', group: 'Students',  align: 'right', sortKey: 'studentsCancelled',
       mono: true, render: (r) => <span style={{ color: r.studentsCancelled > 0 ? STATUS.red : theme.ink }}>{fmt(r.studentsCancelled)}</span> },
     { id: 'attritionRate', label: 'Attrition %', group: 'Students', align: 'right', sortKey: 'attritionRate',

@@ -118,7 +118,6 @@ const EDIT_REQ_FIELD_LABELS = {
   appointmentsBooked:  'Appts booked',
   appointmentsShowed:  'Leads showed',
   appointmentsClosed:  'Leads signed',
-  studentsAcquired:    'Students acquired',
   studentsCancelled:   'Students cancelled',
   totalStudentsStart:  'Students at start',
   flaggedInactive:     'Flagged inactive',

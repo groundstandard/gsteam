@@ -895,7 +895,7 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
     // headcount gets the new running-total "End" column surfaced beside it,
     // without resetting their other column choices (Bobby 2026-06-19 Loom).
     if (Array.isArray(stored)
-        && (stored.includes('studentsStart') || stored.includes('studentsAcquired') || stored.includes('studentsCancelled'))
+        && (stored.includes('studentsStart') || stored.includes('studentsCancelled'))
         && !stored.includes('studentsEnd')) {
       return new Set([...stored, 'studentsEnd']);
     }
@@ -1034,13 +1034,16 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
   // toggle on Week/Month still affects the date column label format (week-of
   // / month label) and the period summary in the header.
   const rows = React.useMemo(() => {
-    // End-of-period student count = Start + Acquired − Cancelled. Shown so the
+    // End-of-period student count = Start + Closed − Cancelled. Shown so the
     // running math is transparent (next period's Start should match this End).
+    // Bobby 2026-06-19 (Loom): "Acquired" and "Closed" were being used as the
+    // same thing (a new student) — the redundant Acquired field is gone, so the
+    // students added this period IS Closed (leadsSigned).
     const withEnd = (e) => ({
       ...e,
       studentsEnd: e.studentsStart == null
         ? null
-        : Number(e.studentsStart) + (Number(e.studentsAcquired) || 0) - (Number(e.studentsCancelled) || 0),
+        : Number(e.studentsStart) + (Number(e.leadsSigned) || 0) - (Number(e.studentsCancelled) || 0),
     });
     if (cadence === 'all' || cadence === 'week' || cadence === 'month') {
       return events.map(e => ({ ...withEnd(e), _isGroup: false, _children: [] }));
@@ -1097,16 +1100,15 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
         apptsBooked:    sum('apptsBooked'),
         leadsShowed:    sum('leadsShowed'),
         leadsSigned:    sum('leadsSigned'),
-        // Start = first month's opening count; End = Start + acquired − cancelled
+        // Start = first month's opening count; End = Start + Closed − Cancelled
         // across the period, so the running student math is visible and the
         // next period's Start should equal this period's End.
         studentsStart:  first('studentsStart'),
-        studentsAcquired: sum('studentsAcquired'),
         studentsCancelled: sum('studentsCancelled'),
         studentsEnd: (() => {
           const st = first('studentsStart');
           if (st == null) return null;
-          return Number(st) + sum('studentsAcquired') - sum('studentsCancelled');
+          return Number(st) + sum('leadsSigned') - sum('studentsCancelled');
         })(),
         surveyScore: avgSurvey,
         notes: typeSummary,
@@ -1176,28 +1178,11 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
     { id: 'leadsSigned',    label: 'Closed', group: 'Funnel', align: 'right', sortKey: 'leadsSigned',    mono: true, render: (r) => fmt(r.leadsSigned) },
     // Students
     { id: 'studentsStart',     label: 'Start',     group: 'Students', align: 'right', sortKey: 'studentsStart',     mono: true, render: (r) => fmt(r.studentsStart) },
-    // Bobby 2026-06-19 (Loom): "Closed is when somebody shows up and then they
-    // sign up — and acquired should be the same thing then." So Acquired and
-    // Closed (leadsSigned) are expected to match per period; when both are
-    // logged and they diverge, surface an amber dot + explanation so the
-    // mismatch is caught as a data-entry issue, not silently trusted.
-    { id: 'studentsAcquired',  label: 'Acquired',  group: 'Students', align: 'right', sortKey: 'studentsAcquired',  mono: true, render: (r) => {
-        const a = r.studentsAcquired, c = r.leadsSigned;
-        const mismatch = a != null && c != null && Number(a) !== Number(c);
-        return (
-          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }}>
-            {fmt(a)}
-            {mismatch && (
-              <span
-                title={`Closed = ${fmt(c)}, Acquired = ${fmt(a)} (off by ${fmt(Math.abs(Number(a) - Number(c)))}). Bobby expects these to match — likely a logging gap.`}
-                style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 4, background: '#E0A100', cursor: 'help' }}
-              />
-            )}
-          </span>
-        );
-      } },
+    // "Acquired" removed 2026-06-19 (Bobby, Loom): it was redundant with
+    // "Closed" — both meant a new student, and the gym doesn't differentiate
+    // walk-ins/referrals from funnel signs. Closed is now the single source.
     { id: 'studentsCancelled', label: 'Cancel',    group: 'Students', align: 'right', sortKey: 'studentsCancelled', mono: true, render: (r) => fmt(r.studentsCancelled) },
-    // End = Start + Acquired − Cancel. Makes the running headcount math
+    // End = Start + Closed − Cancel. Makes the running headcount math
     // explicit so a mismatch with the next period's Start is obviously a
     // data-entry gap, not a calculation error (Bobby 2026-06-19 Loom).
     { id: 'studentsEnd',       label: 'End',       group: 'Students', align: 'right', sortKey: 'studentsEnd',       mono: true, render: (r) => fmt(r.studentsEnd) },
