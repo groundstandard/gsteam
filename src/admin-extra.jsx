@@ -611,6 +611,68 @@ function RatesCard({ theme, clientId, initial, rep, onSave }) {
   );
 }
 
+// Inline client-name editor (Kurt 2026-06-22: "give Bobby the ability to
+// update client names"). Read-only display with a pencil; clicking reveals an
+// input with Save/Cancel. Saves via the generic client updater (onSave →
+// onSetRates(id, { name }, 'Name')). Admin/owner only — only rendered when an
+// update handler is provided.
+function ClientNameEditor({ theme, clientId, name, onSave }) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(name || '');
+  // Reset the draft if the underlying client changes (realtime / navigation).
+  React.useEffect(() => { setDraft(name || ''); setEditing(false); }, [clientId, name]);
+
+  const cancel = () => { setDraft(name || ''); setEditing(false); };
+  const save = () => {
+    const v = draft.trim();
+    if (!v || v === name) { cancel(); return; }
+    onSave(v);
+    setEditing(false);
+  };
+
+  if (!editing) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+        <div style={{ fontFamily: theme.serif, fontSize: 24, fontWeight: 600, color: theme.ink, letterSpacing: -0.4, lineHeight: 1.15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
+        <button
+          onClick={() => { setDraft(name || ''); setEditing(true); }}
+          title="Edit client name"
+          aria-label="Edit client name"
+          style={{
+            flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 26, height: 26, borderRadius: 7, cursor: 'pointer',
+            background: theme.surface, border: `1px solid ${theme.rule}`, color: theme.inkMuted,
+            fontSize: 13, fontFamily: 'inherit', lineHeight: 1,
+          }}
+        >✎</button>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap' }}>
+      <input
+        value={draft}
+        autoFocus
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }}
+        style={{
+          fontFamily: theme.serif, fontSize: 20, fontWeight: 600, color: theme.ink,
+          background: theme.bg, border: `1px solid ${theme.rule}`, borderRadius: 8,
+          padding: '5px 10px', minWidth: 220, maxWidth: '100%', outline: 'none',
+        }}
+      />
+      <button onClick={save} style={{
+        padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+        background: theme.ink, color: theme.accentInk || '#fff', border: `1px solid ${theme.ink}`, borderRadius: 8,
+      }}>Save</button>
+      <button onClick={cancel} style={{
+        padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+        background: theme.surface, color: theme.ink, border: `1px solid ${theme.rule}`, borderRadius: 8,
+      }}>Cancel</button>
+    </div>
+  );
+}
+
 function AdminClientCalc({ state, theme, clientId, navigate, onSetCadence, onSetRates }) {
   const c = state.clients.find(cl => cl.id === clientId);
   if (!c) return <div style={{ padding: 24 }}>Client not found.</div>;
@@ -656,7 +718,9 @@ function AdminClientCalc({ state, theme, clientId, navigate, onSetCadence, onSet
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 11, color: theme.inkMuted, letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600 }}>Per-client calc · {c.id}</div>
-            <div style={{ fontFamily: theme.serif, fontSize: 24, fontWeight: 600, color: theme.ink, letterSpacing: -0.4, lineHeight: 1.15, marginTop: 2 }}>{c.name}</div>
+            {onSetRates
+              ? <ClientNameEditor theme={theme} clientId={c.id} name={c.name} onSave={(v) => onSetRates(c.id, { name: v }, 'Name')} />
+              : <div style={{ fontFamily: theme.serif, fontSize: 24, fontWeight: 600, color: theme.ink, letterSpacing: -0.4, lineHeight: 1.15, marginTop: 2 }}>{c.name}</div>}
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
               <StatusPill status={status} />
               <span style={{ fontSize: 12, color: theme.inkMuted }}>{ca?.name || 'Unassigned'}</span>

@@ -524,12 +524,23 @@ function caScorecard(ca, state) {
   // entries) so a weekly-cadence client logging weeks 1-4 of a month counts
   // as one filled month, not four. Mirrors the SQL function in
   // 20260505_quarterly_scoring.sql.
-  const monthsInQuarter = Math.max(monthsBetween(qStartIso, qEndIso) + 1, 1);
-  const expected = myClients.length * monthsInQuarter;
+  //
+  // Kurt 2026-06-22: a client's tracking begins on its sign date — months
+  // BEFORE the client started shouldn't count as "missing." So expected
+  // months are clamped per-client to start at the later of (quarter start,
+  // the client's sign month). A client that signed mid-quarter is only
+  // expected to have data from its sign month forward, and the book no
+  // longer looks incomplete for months that pre-date the client.
+  let expected = 0;
   let filled = 0;
   myClients.forEach(c => {
+    const signMonth = c.signDate ? firstOfMonth(c.signDate) : qStartIso;
+    const effectiveStart = signMonth > qStartIso ? signMonth : qStartIso;
+    // No expected months if the client signed after the quarter ended.
+    if (effectiveStart > qEndIso) return;
+    expected += Math.max(monthsBetween(effectiveStart, qEndIso) + 1, 1);
     const eff = effectiveMonthlyMetrics(allMetrics, allWeekly, c.id);
-    filled += eff.filter(m => m.month >= qStartIso && m.month <= qEndIso).length;
+    filled += eff.filter(m => m.month >= effectiveStart && m.month <= qEndIso).length;
   });
   const bookCompleteness = expected > 0 ? clamp(filled / expected, 0, 1) : 0;
 

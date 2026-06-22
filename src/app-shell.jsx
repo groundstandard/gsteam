@@ -495,14 +495,15 @@ function App() {
       showToast(`Cadence: ${cadence}`);
     }
   };
-  const setClientRates = async (cid, rates) => {
-    // rates = { upfrontPct, midPct, endPct } (any subset; only changed keys)
+  const setClientRates = async (cid, rates, label = 'Rates') => {
+    // rates = any subset of client fields (rates, tier, cancel, name, …);
+    // only the changed keys are sent. `label` just customises the toast copy.
     setState(s => ({ ...s, clients: s.clients.map(c => c.id === cid ? { ...c, ...rates } : c) }));
     if (CABT_getApiMode() === 'supabase') {
-      try { await CABT_api.updateClient(cid, rates); showToast('Rates updated'); }
-      catch (e) { showToast('Rates save failed'); console.error('[setClientRates]', e); }
+      try { await CABT_api.updateClient(cid, rates); showToast(`${label} updated`); }
+      catch (e) { showToast(`${label} save failed`); console.error('[setClientRates]', e); }
     } else {
-      showToast('Rates updated');
+      showToast(`${label} updated`);
     }
   };
   // Bobby 2026-05-15: dedicated "Cancel Account" flow — sets cancel_date +
