@@ -631,7 +631,11 @@ function LogEventForm({ state, ca, theme, presetClientId, navigate, onSubmit, ed
       saleTotal: showSale ? Number(form.saleTotal || 0) : 0,
       costToUs: showSale ? Number(form.costToUs || 0) : 0,
       notes: form.notes,
-      loggedBy: ca.id,
+      // Write ca_id (not logged_by): the growth_events RLS insert policy
+      // requires ca_id = caller_ca_id(), same as monthly_metrics / surveys.
+      // Logging the CA under logged_by left ca_id null, so every CA insert
+      // was rejected by row-level security (Kurt 2026-06-22).
+      caId: ca.id,
     }, !!editing);
   };
   const requestMode = !!editing && !isAdmin;
