@@ -674,7 +674,7 @@ function App() {
         case 'home': return <CAHome state={state} ca={ca} theme={theme} navigate={navigate} />;
         case 'book': return <CABook state={state} ca={ca} theme={theme} navigate={navigate} initialFilter={route.params.filter}/>;
         case 'dashboard': return <AdminDashboard state={state} theme={theme} navigate={navigate} scopeCa={ca?.id}/>;
-        case 'client-detail': return <ClientDetail state={state} ca={ca} theme={theme} clientId={route.params.clientId} navigate={navigate} isAdmin={isAdminAuth} onCancelAccount={cancelAccount}/>;
+        case 'client-detail': return <ClientDetail state={state} ca={ca} theme={theme} clientId={route.params.clientId} navigate={navigate} isAdmin={isAdminAuth} onCancelAccount={cancelAccount} onUpdateClient={setClientRates}/>;
         case 'log-metrics': return <LogMetricsForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitMetrics} onDelete={deleteMetric} isAdmin={isAdminAuth}/>;
         case 'log-event': return <LogEventForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitEvent} onDelete={deleteEvent} isAdmin={isAdminAuth}/>;
         case 'log-survey': return <LogSurveyForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitSurvey} onDelete={deleteSurvey} isAdmin={isAdminAuth}/>;
@@ -707,7 +707,7 @@ function App() {
       case 'revenue':     return <AdminRevenueLedger state={state} theme={theme}/>;
       case 'clients':         return <AdminClientRollup state={state} theme={theme} navigate={navigate}/>;
       case 'client-calc':      return <AdminClientCalc state={state} theme={theme} clientId={route.params.clientId} navigate={navigate} onSetCadence={setCadence} onSetRates={setClientRates}/>;
-      case 'client-detail':    return <ClientDetail state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} clientId={route.params.clientId} navigate={navigate} isAdmin={isAdminAuth} onCancelAccount={cancelAccount}/>;
+      case 'client-detail':    return <ClientDetail state={state} ca={state.cas.find(c => c.id === state.clients.find(cl => cl.id === route.params.clientId)?.assignedCA) || state.cas[0]} theme={theme} clientId={route.params.clientId} navigate={navigate} isAdmin={isAdminAuth} onCancelAccount={cancelAccount} onUpdateClient={setClientRates}/>;
       // Bobby 2026-05-12: "I clicked to edit the metric and the screen is
       // blank." The CA role had log-* routes wired; the Admin role never
       // did, so navigating from Client Detail's tap-to-edit cards rendered

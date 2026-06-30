@@ -1,6 +1,75 @@
 // ca-detail.jsx — Client Detail screen with Overview/Metrics/Events/Surveys tabs
 
-function ClientDetail({ state, ca, theme, clientId, navigate, isAdmin, onCancelAccount }) {
+// Per-account free-form notes (Kurt 2026-06-26: "a notes section on each
+// account to store birthdays and stuff — shouldn't count toward any scores
+// or metrics"). Saved to the client's notes field; the scoring engine never
+// reads it, so it's display-only. Editable by CAs and admins.
+function ClientNotesCard({ theme, client, onUpdateClient }) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(client.notes || '');
+  const [saving, setSaving] = React.useState(false);
+  // Re-sync if the client changes or a realtime update lands.
+  React.useEffect(() => { setDraft(client.notes || ''); setEditing(false); }, [client.id, client.notes]);
+
+  const cancel = () => { setDraft(client.notes || ''); setEditing(false); };
+  const save = async () => {
+    if (saving || typeof onUpdateClient !== 'function') return;
+    setSaving(true);
+    try { await onUpdateClient(client.id, { notes: draft.trim() }, 'Notes'); setEditing(false); }
+    finally { setSaving(false); }
+  };
+  const btn = (primary) => ({
+    padding: '7px 14px', fontSize: 12, fontWeight: primary ? 700 : 600,
+    borderRadius: 8, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+    background: primary ? theme.ink : theme.surface,
+    color: primary ? (theme.accentInk || '#fff') : theme.ink,
+    border: `1px solid ${primary ? theme.ink : theme.rule}`,
+  });
+
+  return (
+    <Card theme={theme}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <SectionLabel theme={theme}>Notes</SectionLabel>
+        {!editing && (
+          <button onClick={() => { setDraft(client.notes || ''); setEditing(true); }} style={btn(false)}>
+            {client.notes ? 'Edit' : 'Add note'}
+          </button>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: theme.inkMuted, marginBottom: 10, lineHeight: 1.5 }}>
+        Free-form notes — birthdays, preferences, reminders. Not counted in any score or metric.
+      </div>
+      {editing ? (
+        <>
+          <textarea
+            value={draft}
+            autoFocus
+            onChange={(e) => setDraft(e.target.value)}
+            rows={5}
+            placeholder="e.g. Owner's birthday March 12 · prefers email over calls"
+            style={{
+              width: '100%', boxSizing: 'border-box', resize: 'vertical',
+              padding: '10px 12px', fontSize: 14, lineHeight: 1.5,
+              fontFamily: 'inherit', color: theme.ink,
+              background: theme.bg, border: `1px solid ${theme.rule}`, borderRadius: 10,
+              outline: 'none',
+            }}
+          />
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button onClick={save} disabled={saving} style={btn(true)}>{saving ? 'Saving…' : 'Save'}</button>
+            <button onClick={cancel} disabled={saving} style={btn(false)}>Cancel</button>
+          </div>
+        </>
+      ) : (
+        <div style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.5, color: client.notes ? theme.ink : theme.inkMuted }}>
+          {client.notes || 'No notes yet.'}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ClientDetail({ state, ca, theme, clientId, navigate, isAdmin, onCancelAccount, onUpdateClient }) {
   const [tab, setTab] = React.useState('overview');
   // Bobby 2026-05-05: history view consolidates every log type for a client
   // and groups them by month or week. Toggle persists per-session per-client.
@@ -206,6 +275,8 @@ function ClientDetail({ state, ca, theme, clientId, navigate, isAdmin, onCancelA
               </div>
             )}
           </Card>
+
+          <ClientNotesCard theme={theme} client={client} onUpdateClient={onUpdateClient} />
         </div>
       )}
 
