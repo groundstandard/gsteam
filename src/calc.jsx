@@ -125,14 +125,17 @@ function clientAgeDays(client, today = new Date()) {
 }
 
 // Client tier eligibility for bonus scoring. Per spec only Standard + VIP
-// count toward CA scoring. If the schema doesn't have a tier column yet
-// (rollout phase), treat every active client as eligible — the rewrite
-// handles missing tiers gracefully so we don't have to ship the schema
-// before the math.
+// count toward CA scoring.
+//
+// Bobby 2026-07-01: clients that aren't marked Standard or VIP (e.g. left
+// blank, or on another tier) were still being counted in the bonus metrics.
+// The old rollout fallback treated a missing tier as eligible; now that the
+// tier column is populated, eligibility is strict — only an explicit
+// standard/vip counts. Anything else (blank or other) is excluded from the
+// bonus and drops off the dashboard's default Standard+VIP view.
 function isEligibleTier(client) {
   if (!client) return false;
   const tier = (client.tier || '').toLowerCase();
-  if (!tier) return true; // schema rollout: treat as eligible
   return tier === 'standard' || tier === 'vip';
 }
 

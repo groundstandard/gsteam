@@ -2072,11 +2072,14 @@ function AdminFormulaInspector({ state, theme, navigate }) {
     );
   };
 
+  // Strict tier eligibility (Bobby 2026-07-01): only explicit standard/vip
+  // count — a blank tier is NOT treated as standard, matching calc.jsx.
+  const isElig = (c) => { const t = (c.tier || '').toLowerCase(); return t === 'standard' || t === 'vip'; };
   const myClients = (state.clients || []).filter(c => c.assignedCA === selectedCa?.id && !c.cancelDate);
-  const eligibleClients = myClients.filter(c => (c.tier || 'standard') === 'standard' || c.tier === 'vip');
+  const eligibleClients = myClients.filter(isElig);
   const eligibleAtStart = (state.clients || []).filter(c =>
     c.assignedCA === selectedCa?.id &&
-    ((c.tier || 'standard') === 'standard' || c.tier === 'vip') &&
+    isElig(c) &&
     c.signDate && new Date(c.signDate) < new Date(cfg.quarterStart || cfg.quarter_start || new Date())
   );
 
@@ -2430,7 +2433,10 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
   // Reset page index whenever the visible result-set might shrink.
   React.useEffect(() => { setPageIndex(0); }, [search, includeCancelled, pageSize, tierFilter.join(','), caFilter]);
 
-  const tierMatch = (c) => tierFilter.includes(((c.tier || 'standard') + '').toLowerCase());
+  // Bobby 2026-07-01: don't treat a blank tier as "standard" — unmarked
+  // clients shouldn't ride in on the default Standard+VIP filter. A blank
+  // tier only shows when the user explicitly includes it in the filter.
+  const tierMatch = (c) => tierFilter.includes(((c.tier || '') + '').toLowerCase());
   const caMatch = (c) => {
     if (scopeCa) return c.assignedCA === scopeCa;
     if (caFilter === 'all') return true;
