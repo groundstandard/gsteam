@@ -2777,7 +2777,7 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
     </td>
   );
   const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString());
-  const money = (n) => (n == null ? '—' : '$' + Math.round(Number(n)).toLocaleString());
+  const money = (n) => (n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const pct = (n) => (n == null ? '—' : (n * 100).toFixed(0));
   const pctRate = (n) => (n == null ? '—' : (n * 100).toFixed(1) + '%');
   const status = (n) => (n == null ? 'gray' : (n >= 0.80 ? 'green' : n >= 0.60 ? 'yellow' : 'red'));

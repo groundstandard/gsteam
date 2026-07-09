@@ -1210,7 +1210,7 @@ function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetr
   };
 
   const fmt   = (n) => (n == null ? '—' : Number(n).toLocaleString());
-  const money = (n) => (n == null ? '—' : '$' + Math.round(Number(n)).toLocaleString());
+  const money = (n) => (n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const pctRate = (n) => (n == null ? '—' : (n * 100).toFixed(1) + '%');
 
   // Column registry for the per-client dashboard

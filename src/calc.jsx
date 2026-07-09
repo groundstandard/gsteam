@@ -50,9 +50,10 @@ const monthsBetween = (from, to) => {
 };
 
 const fmtMoney = (n) => {
-  if (n == null || isNaN(n)) return '$0';
+  // Bobby 2026-07-04: show all money to the nearest penny (2 decimals).
+  if (n == null || isNaN(n)) return '$0.00';
   const sign = n < 0 ? '-' : '';
-  return sign + '$' + Math.abs(Math.round(n)).toLocaleString('en-US');
+  return sign + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
 const fmtPct = (n, decimals = 1) => {
