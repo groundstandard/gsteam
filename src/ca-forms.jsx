@@ -118,7 +118,10 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
       .slice(0, 2);
     const thisVal = Number(thisGross) || 0;
     const all = thisVal > 0 ? [thisVal, ...priors] : priors;
-    return all.length > 0 ? all.reduce((s, n) => s + n, 0) / all.length : 0;
+    if (all.length === 0) return 0;
+    // Bobby 2026-07-04: all money figures stay to the nearest penny — no more
+    // long repeating decimals from the trailing-average.
+    return Math.round((all.reduce((s, n) => s + n, 0) / all.length) * 100) / 100;
   };
 
   const [form, setForm] = React.useState(editing
@@ -254,7 +257,10 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
     // revenue across this client's prior entries plus this one. Reads are
     // unchanged (every consumer of clientMRR still works), so formulas don't
     // break — they just see a smoothed value going forward.
-    const grossRevenue = num(form.totalRevenue);
+    // All money is kept to the nearest penny (Bobby 2026-07-04: "all money
+    // just to the nearest penny — let's keep it easy").
+    const toPenny = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const grossRevenue = toPenny(form.totalRevenue);
     const periodForCalc = isWeekly ? form.weekStart : CABT_firstOfMonth(form.month);
     const computedMRR = computeRollingMRR(form.clientId, periodForCalc, activeCadence, grossRevenue, editingId);
     const row = {
@@ -264,8 +270,8 @@ function LogMetricsForm({ state, ca, theme, presetClientId, navigate, onSubmit, 
       ...periodFields,
       clientMRR: computedMRR,
       clientGrossRevenue: grossRevenue,
-      leadCost: num(form.leadCost),
-      adSpend: num(form.adSpend),
+      leadCost: toPenny(form.leadCost),
+      adSpend: toPenny(form.adSpend),
       leadsGenerated: num(form.leadsGenerated),
       apptsBooked: num(form.apptsBooked),
       leadsShowed: num(form.leadsShowed),
