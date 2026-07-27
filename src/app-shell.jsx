@@ -696,6 +696,7 @@ function App() {
         case 'log-survey': return <LogSurveyForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitSurvey} onDelete={deleteSurvey} isAdmin={isAdminAuth}/>;
         case 'log-checkin': return <LogCheckinForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} navigate={navigate} onSubmit={submitCheckin}/>;
         case 'scorecard': return <CAScorecard state={state} ca={ca} theme={theme} viz={t.scorecardViz}/>;
+        case 'calls-board': return <CallsBoard state={state} theme={theme} navigate={navigate} isAdmin={isAdminAuth} onSetStatus={setCallStatus}/>;
         case 'profile': return <CAProfile state={state} ca={ca} theme={theme} navigate={navigate} profile={authedProfile} onSignOut={signOutHandler}/>;
         default: return null;
       }

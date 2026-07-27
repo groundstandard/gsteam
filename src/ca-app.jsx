@@ -688,6 +688,7 @@ function CAProfile({ state, ca, theme, navigate, profile, onSignOut }) {
         {[
           { icon: 'book', label: 'My accounts', desc: 'View all clients in your book', to: 'book' },
           { icon: 'chart', label: 'Scorecard', desc: 'Quarterly composite + sub-scores', to: 'scorecard' },
+          { icon: 'nav-accounts', label: 'Weekly Client Calls', desc: 'Live call-status board for the team', to: 'calls-board' },
         ].map((it, i, arr) => (
           <button
             key={it.to}
