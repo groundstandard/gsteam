@@ -676,11 +676,33 @@ function ClientNameEditor({ theme, clientId, name, onSave }) {
 function AdminClientCalc({ state, theme, clientId, navigate, onSetCadence, onSetRates }) {
   const c = state.clients.find(cl => cl.id === clientId);
   if (!c) return <div style={{ padding: 24 }}>Client not found.</div>;
-  const sub = CABT_clientSubScores(c, state.monthlyMetrics, state.surveys, state.config);
+
+  // Per-account quarter selector (Bobby 2026-07-07): view this account's
+  // scores for any quarter on its own, or "cumulative" across the whole year.
+  // Cumulative uses a full-year window so every sub-score aggregates across
+  // all quarters. Local view only — never touches global config.
+  const cfg = state.config || {};
+  const cfgStart = cfg.quarterStart || cfg.quarter_start || '';
+  const parsedYr = new Date(cfgStart || new Date()).getFullYear();
+  const scYear = Number.isFinite(parsedYr) ? parsedYr : new Date().getFullYear();
+  const scQuarters = CABT_quartersOfYear(scYear);
+  const scCumulative = { key: `${scYear}-CUM`, label: `${scYear} cumulative`, start: `${scYear}-01-01`, end: `${scYear}-12-31` };
+  const scOptions = [...scQuarters, scCumulative];
+  const scDefault = scQuarters.find(q => q.start === cfgStart) || scCumulative;
+  const [scSelKey, setScSelKey] = React.useState(scDefault.key);
+  const scSelected = scOptions.find(o => o.key === scSelKey) || scDefault;
+
+  const sub = CABT_clientSubScores(
+    c, state.monthlyMetrics, state.surveys,
+    { ...cfg, quarterStart: scSelected.start, quarterEnd: scSelected.end },
+    new Date(), state.weeklyMetrics || []
+  );
   const status = CABT_scoreToStatus(sub.composite);
   const ca = state.cas.find(x => x.id === c.assignedCA);
+  // Scope the reverse-engineered inputs to the selected quarter/window too,
+  // so the whole screen reflects one quarter consistently.
   const recent = state.monthlyMetrics
-    .filter(m => m.clientId === c.id)
+    .filter(m => m.clientId === c.id && m.month >= scSelected.start && m.month <= scSelected.end)
     .sort((a, b) => b.month.localeCompare(a.month))
     .slice(0, 3);
 
@@ -732,6 +754,28 @@ function AdminClientCalc({ state, theme, clientId, navigate, onSetCadence, onSet
               {sub.composite != null ? (sub.composite*100).toFixed(0) : '—'}
             </div>}/>
         </div>
+      </div>
+
+      {/* Quarter selector — analyze this account per quarter or cumulative */}
+      <div style={{ padding: '0 16px 14px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {scOptions.map((o, i) => {
+          const isCum = o.key === scCumulative.key;
+          const st = isCum ? 'past' : CABT_quarterStatus(o.start, o.end);
+          const isSel = o.key === scSelKey;
+          const disabled = st === 'future';
+          return (
+            <button key={o.key} disabled={disabled} onClick={() => setScSelKey(o.key)} style={{
+              padding: '6px 12px', fontSize: 12, fontWeight: 700, borderRadius: 999,
+              fontFamily: 'inherit', cursor: disabled ? 'not-allowed' : 'pointer',
+              background: isSel ? theme.ink : theme.surface,
+              color: isSel ? (theme.accentInk || '#fff') : theme.ink,
+              border: `1px solid ${isSel ? theme.ink : theme.rule}`,
+              opacity: disabled ? 0.4 : 1,
+            }}>
+              {isCum ? 'Cumulative' : `Q${i + 1}`}{(!isCum && st === 'current') ? ' · live' : ''}
+            </button>
+          );
+        })}
       </div>
 
       <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
