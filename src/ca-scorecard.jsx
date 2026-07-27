@@ -1,14 +1,70 @@
 // ca-scorecard.jsx — My Scorecard with 3 viz options
 
+// Calendar quarters for a year → { key, label, start, end }. Bobby 2026-07-07:
+// the Scorecard can now be viewed per quarter (Q1–Q4), so each quarter's score
+// and bonus can be analyzed on its own — not just the one configured quarter.
+function CABT_quartersOfYear(year) {
+  return [
+    { key: `${year}-Q1`, label: `Q1 ${year}`, start: `${year}-01-01`, end: `${year}-03-31` },
+    { key: `${year}-Q2`, label: `Q2 ${year}`, start: `${year}-04-01`, end: `${year}-06-30` },
+    { key: `${year}-Q3`, label: `Q3 ${year}`, start: `${year}-07-01`, end: `${year}-09-30` },
+    { key: `${year}-Q4`, label: `Q4 ${year}`, start: `${year}-10-01`, end: `${year}-12-31` },
+  ];
+}
+function CABT_quarterStatus(start, end, today = new Date()) {
+  if (today < new Date(start)) return 'future';
+  if (today > new Date(end + 'T23:59:59')) return 'past';
+  return 'current';
+}
+
 function CAScorecard({ state, ca, theme, viz = 'rings' }) {
-  const score = CABT_caScorecard(ca, state);
+  const cfg = (state && state.config) || {};
+  const cfgStart = cfg.quarterStart || cfg.quarter_start || '';
+  const parsedYr = new Date(cfgStart || new Date()).getFullYear();
+  const year = Number.isFinite(parsedYr) ? parsedYr : new Date().getFullYear();
+  const quarters = CABT_quartersOfYear(year);
+  // Default to the quarter matching the configured window, else the current one.
+  const defaultQ =
+    quarters.find(q => q.start === cfgStart) ||
+    quarters.find(q => CABT_quarterStatus(q.start, q.end) === 'current') ||
+    quarters[quarters.length - 1];
+  const [selKey, setSelKey] = React.useState(defaultQ.key);
+  const selected = quarters.find(q => q.key === selKey) || defaultQ;
+  const selStatus = CABT_quarterStatus(selected.start, selected.end);
+
+  // Recompute the scorecard for the SELECTED quarter by cloning state with an
+  // overridden window. This never touches the global config, so it's a local
+  // view only (mirrors the Annual Bonus screen's per-quarter pattern). The
+  // bonus pot auto-re-selects for the chosen quarter inside caScorecard.
+  const score = CABT_caScorecard(ca, { ...state, config: { ...cfg, quarterStart: selected.start, quarterEnd: selected.end } });
   const status = CABT_scoreToStatus(score.composite);
 
   return (
     <div style={{ padding: '8px 16px 100px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Quarter selector — view any quarter's score & bonus on its own */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {quarters.map((q, i) => {
+          const st = CABT_quarterStatus(q.start, q.end);
+          const isSel = q.key === selKey;
+          const disabled = st === 'future';
+          return (
+            <button key={q.key} disabled={disabled} onClick={() => setSelKey(q.key)} style={{
+              padding: '7px 13px', fontSize: 13, fontWeight: 700, borderRadius: 999,
+              fontFamily: 'inherit', cursor: disabled ? 'not-allowed' : 'pointer',
+              background: isSel ? theme.ink : theme.surface,
+              color: isSel ? (theme.accentInk || '#fff') : theme.ink,
+              border: `1px solid ${isSel ? theme.ink : theme.rule}`,
+              opacity: disabled ? 0.4 : 1,
+            }}>
+              {`Q${i + 1}`}{st === 'current' ? ' · live' : ''}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Hero numbers */}
       <Card theme={theme} padding={20}>
-        <div style={{ fontSize: 11, color: theme.inkMuted, letterSpacing: 0.6, textTransform: 'uppercase', fontWeight: 700 }}>Q2 2026 · Projected payout</div>
+        <div style={{ fontSize: 11, color: theme.inkMuted, letterSpacing: 0.6, textTransform: 'uppercase', fontWeight: 700 }}>{selected.label} · {selStatus === 'current' ? 'Projected payout' : 'Payout'}</div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 6 }}>
           <div style={{ fontFamily: theme.serif, fontSize: 44, fontWeight: 600, color: theme.ink, letterSpacing: -1, lineHeight: 1 }}>
             {CABT_fmtMoney(score.finalPayout)}
@@ -17,7 +73,7 @@ function CAScorecard({ state, ca, theme, viz = 'rings' }) {
         </div>
         <div style={{ marginTop: 12, height: 8, background: theme.rule, borderRadius: 4, overflow: 'hidden' }}>
           <div style={{
-            width: `${(score.finalPayout / score.maxPayout * 100)}%`,
+            width: `${score.maxPayout > 0 ? Math.min(100, score.finalPayout / score.maxPayout * 100) : 0}%`,
             height: '100%', background: STATUS[status],
             transition: 'width .5s',
           }}/>
