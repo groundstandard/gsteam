@@ -5,16 +5,21 @@
 // every other viewer in real time (via the app's existing realtime channel).
 // Kurt 2026-07-27: "keep it in the gs team app so I can stay in one place."
 
-// Status cycle + colors (matches the original schedule graphic).
+// Vivid status colors are fixed (they read fine on both light and dark
+// backgrounds). "No status" is theme-aware (resolved at render), so account
+// names stay legible in either theme.
 const CALL_STATUSES = [
-  { key: 'none',      label: 'No status', bg: '#e6e8ec', fg: '#6b7280' },
+  { key: 'none',      label: 'No status' },
   { key: 'healthy',   label: 'Healthy',   bg: '#2f9e5f', fg: '#ffffff' },
-  { key: 'watch',     label: 'Watch',     bg: '#d4a017', fg: '#3a2c00' },
-  { key: 'at_risk',   label: 'At risk',   bg: '#c0392b', fg: '#ffffff' },
-  { key: 'escalated', label: 'Escalated', bg: '#6b3fa0', fg: '#ffffff' },
+  { key: 'watch',     label: 'Watch',     bg: '#d9a520', fg: '#241a00' },
+  { key: 'at_risk',   label: 'At risk',   bg: '#d0392c', fg: '#ffffff' },
+  { key: 'escalated', label: 'Escalated', bg: '#7c4dc4', fg: '#ffffff' },
 ];
 const CALL_STATUS_KEYS = CALL_STATUSES.map(s => s.key);
-const CALL_STATUS_BY_KEY = Object.fromEntries(CALL_STATUSES.map(s => [s.key, s]));
+
+// Fixed dark header — legible in both themes (matches the original navy
+// schedule graphic).
+const CALLS_HEADER_BG = '#211a3a';
 
 const CALLS_DAYS  = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const CALLS_TIMES = [
@@ -23,8 +28,6 @@ const CALLS_TIMES = [
   '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM',
 ];
 // grid[time] = [Mon, Tue, Wed, Thu, Fri] account label or null.
-// Editing the schedule is a code change for now (F5 admin-editing is a v1.1
-// follow-up); this mirrors the current static schedule exactly.
 const CALLS_GRID = {
   '9:30 AM':  ['All Hands (GSA)', 'All in Jiu-Jitsu', null, null, null],
   '10:00 AM': [null, 'Simpleman', null, null, 'Bodega'],
@@ -42,9 +45,6 @@ const CALLS_GRID = {
 };
 
 function CallsBoard({ state, theme, navigate, isAdmin, onSetStatus }) {
-  if (!isAdmin) {
-    return <div style={{ padding: 24, color: theme.inkMuted }}>Not authorized.</div>;
-  }
   const [busy, setBusy] = React.useState(null);
   const [errKey, setErrKey] = React.useState(null);
 
@@ -54,6 +54,14 @@ function CallsBoard({ state, theme, navigate, isAdmin, onSetStatus }) {
     (state.callStatuses || []).forEach(s => { if (s && s.id) m[s.id] = s.status || 'none'; });
     return m;
   }, [state.callStatuses]);
+
+  // Theme-aware colors for a status key. "No status" tracks the theme so text
+  // stays readable on light and dark backgrounds.
+  const colorsFor = (key) => {
+    if (!key || key === 'none') return { bg: theme.bgElev, fg: theme.ink };
+    const s = CALL_STATUSES.find(x => x.key === key) || CALL_STATUSES[0];
+    return { bg: s.bg, fg: s.fg };
+  };
 
   const cycle = async (label) => {
     const cur = byId[label] || 'none';
@@ -68,10 +76,10 @@ function CallsBoard({ state, theme, navigate, isAdmin, onSetStatus }) {
     setBusy(null);
   };
 
-  const th = {
-    padding: '10px 8px', fontSize: 11, fontWeight: 800, letterSpacing: 0.4,
-    textTransform: 'uppercase', color: '#fff', background: theme.ink,
-    whiteSpace: 'nowrap',
+  const headCell = {
+    padding: '11px 8px', fontSize: 11, fontWeight: 800, letterSpacing: 0.5,
+    textTransform: 'uppercase', color: '#f4f2fa', background: CALLS_HEADER_BG,
+    whiteSpace: 'nowrap', borderBottom: '2px solid rgba(255,255,255,0.10)',
   };
 
   return (
@@ -89,18 +97,21 @@ function CallsBoard({ state, theme, navigate, isAdmin, onSetStatus }) {
       <Card theme={theme} padding={12}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', color: theme.inkMuted }}>Status</span>
-          {CALL_STATUSES.map(s => (
-            <span key={s.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: theme.ink }}>
-              <span style={{ width: 13, height: 13, borderRadius: 4, background: s.bg, border: `1px solid ${theme.rule}` }}/>
-              {s.label}
-            </span>
-          ))}
+          {CALL_STATUSES.map(s => {
+            const c = colorsFor(s.key);
+            return (
+              <span key={s.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: theme.ink }}>
+                <span style={{ width: 13, height: 13, borderRadius: 4, background: c.bg, border: `1px solid ${theme.rule}` }}/>
+                {s.label}
+              </span>
+            );
+          })}
         </div>
       </Card>
 
       {errKey && (
-        <div style={{ background: '#c0392b15', color: '#c0392b', border: '1px solid #c0392b33', borderRadius: 8, padding: '9px 13px', fontSize: 13 }}>
-          <strong>Save failed for {errKey}.</strong> Try again.
+        <div style={{ background: '#d0392c22', color: '#d0392c', border: '1px solid #d0392c55', borderRadius: 8, padding: '9px 13px', fontSize: 13 }}>
+          <strong>Save failed for {errKey}.</strong> Click it again to retry.
         </div>
       )}
 
@@ -109,9 +120,9 @@ function CallsBoard({ state, theme, navigate, isAdmin, onSetStatus }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>
             <tr>
-              <th style={{ ...th, position: 'sticky', left: 0, zIndex: 2, textAlign: 'left', width: 74, minWidth: 74 }}>Time</th>
+              <th style={{ ...headCell, position: 'sticky', left: 0, zIndex: 2, textAlign: 'left', width: 76, minWidth: 76 }}>Time</th>
               {CALLS_DAYS.map(d => (
-                <th key={d} style={{ ...th, textAlign: 'center' }}>{d}</th>
+                <th key={d} style={{ ...headCell, textAlign: 'center' }}>{d}</th>
               ))}
             </tr>
           </thead>
@@ -121,27 +132,28 @@ function CallsBoard({ state, theme, navigate, isAdmin, onSetStatus }) {
               return (
                 <tr key={time}>
                   <td style={{
-                    padding: '6px 8px', fontSize: 11, fontWeight: 700, color: '#fff',
-                    background: theme.ink, whiteSpace: 'nowrap', textAlign: 'center',
+                    padding: '6px 8px', fontSize: 11, fontWeight: 700, color: '#f4f2fa',
+                    background: CALLS_HEADER_BG, whiteSpace: 'nowrap', textAlign: 'center',
                     position: 'sticky', left: 0, zIndex: 1,
-                    borderBottom: `1px solid ${theme.bg}`,
+                    borderBottom: '1px solid rgba(255,255,255,0.08)',
                   }}>{time}</td>
                   {rowCells.map((label, di) => {
                     if (!label) {
-                      return <td key={di} style={{ borderBottom: `1px solid ${theme.rule}`, borderLeft: `1px solid ${theme.rule}`, background: theme.bgElev, height: 42 }}/>;
+                      return <td key={di} style={{ borderBottom: `1px solid ${theme.rule}`, borderLeft: `1px solid ${theme.rule}`, background: theme.surface, height: 42 }}/>;
                     }
-                    const st = CALL_STATUS_BY_KEY[byId[label] || 'none'];
+                    const c = colorsFor(byId[label]);
                     const isBusy = busy === label;
+                    const st = byId[label] || 'none';
                     return (
                       <td key={di} style={{ borderBottom: `1px solid ${theme.rule}`, borderLeft: `1px solid ${theme.rule}`, padding: 0 }}>
                         <button
                           onClick={() => cycle(label)}
                           disabled={isBusy}
-                          title={`${label} — ${st.label}. Click to change.`}
+                          title={`${label} — ${(CALL_STATUSES.find(s => s.key === st) || {}).label}. Click to change.`}
                           style={{
                             width: '100%', minHeight: 42, padding: '8px 10px',
                             border: 'none', cursor: isBusy ? 'wait' : 'pointer',
-                            background: st.bg, color: st.fg,
+                            background: c.bg, color: c.fg,
                             fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
                             textAlign: 'center', lineHeight: 1.25,
                             opacity: isBusy ? 0.6 : 1, transition: 'background .15s',
