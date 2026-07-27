@@ -1774,6 +1774,7 @@ function AdminAuditLog({ state, theme }) {
 
 function AdminMore({ theme, navigate, profile, onSignOut }) {
   const items = [
+    { name: 'calls-board', icon: 'nav-accounts', label: 'Weekly Client Calls', desc: 'Live per-account call-status board — click to cycle colors' },
     { name: 'dashboard', icon: 'chart', label: 'All-accounts dashboard', desc: 'Compare every client’s metrics in one sortable table' },
     { name: 'edits',     icon: 'edit',  label: 'Edit Requests',   desc: 'Approve protected-field edits past grace' },
     { name: 'reviews',   icon: 'star',  label: 'Reviews Inbox',   desc: 'Match incoming reviews to clients' },

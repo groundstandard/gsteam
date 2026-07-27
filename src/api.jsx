@@ -281,6 +281,16 @@ const CABT_api = {
   async updateEvent(id, row)          { return updateRoute(row, 'growth_events',   id); },
   async updateSurvey(id, row)         { return updateRoute(row, 'surveys',         id); },
   async updateClient(id, row)         { return updateRoute(row, 'clients',         id); },
+  // Weekly Client Calls board — upsert one account's status (id = account label).
+  async upsertCallStatus(row) {
+    if (CABT_getApiMode() !== 'supabase') return row;
+    const sb = await CABT_sb();
+    const { data: { user } } = await sb.auth.getUser();
+    const payload = { id: row.id, status: row.status, updated_at: new Date().toISOString(), updated_by: user?.id || null };
+    const { data, error } = await sb.from('call_statuses').upsert(payload, { onConflict: 'id' }).select().single();
+    if (error) throw error;
+    return toUI(data);
+  },
   async deleteRow(table, id) {
     const mode = CABT_getApiMode();
     if (mode !== 'supabase') return { id };
@@ -515,7 +525,7 @@ async function loadStateSheet() {
 
 async function loadStateSupabase() {
   const sb = await CABT_sb();
-  const [profile, cas, sales, clients, mm, wm, ge, sv, adj, cfg, pending, oq, wc, mc, cr, qi, er, rv] = await Promise.all([
+  const [profile, cas, sales, clients, mm, wm, ge, sv, adj, cfg, pending, oq, wc, mc, cr, qi, er, rv, cs] = await Promise.all([
     CABT_currentProfile(),
     sb.from('cas').select('*').order('id'),
     sb.from('sales_team').select('*').order('id'),
@@ -545,6 +555,8 @@ async function loadStateSupabase() {
       .order('requested_at', { ascending: false })
       .then(r => r, () => ({ data: [] })),
     sb.from('reviews').select('*').order('reviewed_at', { ascending: false }).then(r => r, () => ({ data: [] })),
+    // Weekly Client Calls board — live per-account status (graceful if table missing)
+    sb.from('call_statuses').select('*').then(r => r, () => ({ data: [] })),
   ]);
 
   const cancelReasons = toUI(cr.data || []);
@@ -573,6 +585,7 @@ async function loadStateSupabase() {
     quarterInputs, allQuarterInputs: allQI,
     editRequests: toUI(er.data || []),
     reviews:      toUI(rv.data || []),
+    callStatuses: toUI(cs.data || []),
   };
 }
 

@@ -13,7 +13,7 @@
 // re-installs the SW (and re-fetches the SHELL precache) when this string
 // differs from the previously-installed copy.
 
-const VERSION = '1782000400';
+const VERSION = '1782000500';
 const CACHE   = `cabt-${VERSION}`;
 
 // Files known at install time. Other same-origin requests are cached on first hit.
@@ -43,6 +43,7 @@ const SHELL = [
   '/src/admin-app.jsx',
   '/src/admin-extra.jsx',
   '/src/admin-queues.jsx',
+  '/src/calls-board.jsx',
   '/src/auth-gate.jsx',
   '/src/app-shell.jsx',
 ];

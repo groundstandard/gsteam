@@ -178,6 +178,7 @@ function App() {
         open_questions: 'openQuestions',
         edit_requests: 'editRequests',
         reviews: 'reviews',
+        call_statuses: 'callStatuses',
         // config: handled specially below (single-row table, store the
         // values jsonb directly on state.config rather than a list).
       };
@@ -215,7 +216,7 @@ function App() {
       'monthly_metrics', 'weekly_metrics', 'growth_events', 'surveys',
       'adjustments', 'weekly_checkins', 'monthly_checkins', 'pending_clients',
       'cancel_reasons', 'quarter_inputs', 'open_questions',
-      'edit_requests', 'reviews', 'config',
+      'edit_requests', 'reviews', 'config', 'call_statuses',
     ], apply).then(fn => { if (cancelled) fn?.(); else unsub = fn; });
     return () => { cancelled = true; if (unsub) unsub(); };
   }, [t.apiMode, authedSession]);
@@ -544,6 +545,21 @@ function App() {
       showToast(`${label} updated`);
     }
   };
+  // Weekly Client Calls board — optimistically set an account's status, then
+  // persist. Realtime echoes it to every other viewer. Throws on failure so the
+  // board can surface a retry.
+  const setCallStatus = async (id, status) => {
+    setState(s => {
+      const list = s.callStatuses || [];
+      const next = list.some(x => x.id === id)
+        ? list.map(x => x.id === id ? { ...x, status } : x)
+        : [...list, { id, status }];
+      return { ...s, callStatuses: next };
+    });
+    if (CABT_getApiMode() === 'supabase') {
+      await CABT_api.upsertCallStatus({ id, status });
+    }
+  };
   // Bobby 2026-05-15: dedicated "Cancel Account" flow — sets cancel_date +
   // cancel_reason directly on the clients row without going through monthly
   // metrics. Admin/owner only. Also supports retroactive edits on already-
@@ -726,6 +742,7 @@ function App() {
       case 'bulk-cadence': return <AdminBulkCadence state={state} theme={theme} navigate={navigate}/>;
       case 'formula-configurator': return <AdminConfig state={state} theme={theme} onUpdate={updateConfig}/>;
       case 'roster':      return <AdminRoster state={state} theme={theme} onReload={reloadLive} onToast={showToast}/>;
+      case 'calls-board': return <CallsBoard state={state} theme={theme} navigate={navigate} isAdmin={isAdminAuth} onSetStatus={setCallStatus}/>;
       case 'more':        return <AdminMore theme={theme} navigate={navigate} profile={authedProfile} onSignOut={signOutHandler}/>;
       default: return null;
     }
