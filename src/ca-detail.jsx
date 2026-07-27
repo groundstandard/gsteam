@@ -69,7 +69,49 @@ function ClientNotesCard({ theme, client, onUpdateClient }) {
   );
 }
 
-function ClientDetail({ state, ca, theme, clientId, navigate, isAdmin, onCancelAccount, onUpdateClient }) {
+// CA-facing cancel-reason picker (Bobby 2026-07-27: "make it so [the CA] puts
+// the cancel reason and [the owner] approves"). Submits the chosen reason as an
+// edit request — it doesn't apply until an admin approves it in the queue.
+function CACancelReasonPicker({ theme, client, cancelReasons, onSubmit }) {
+  const [reason, setReason] = React.useState(client.cancelReason || '');
+  const [submitting, setSubmitting] = React.useState(false);
+  const [done, setDone] = React.useState(false);
+  React.useEffect(() => { setReason(client.cancelReason || ''); setDone(false); }, [client.id, client.cancelReason]);
+  const unchanged = !reason || reason === (client.cancelReason || '');
+  const submit = async () => {
+    if (submitting || unchanged) return;
+    setSubmitting(true);
+    try { await onSubmit(client, reason); setDone(true); }
+    finally { setSubmitting(false); }
+  };
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: theme.inkMuted, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 6 }}>
+        Set cancel reason
+      </div>
+      <Select
+        value={reason}
+        onChange={(v) => { setReason(v); setDone(false); }}
+        options={[{ value: '', label: '— pick a reason —' }, ...cancelReasons.map(r => ({ value: r.code, label: r.label }))]}
+        theme={theme}
+      />
+      <button onClick={submit} disabled={submitting || unchanged} style={{
+        marginTop: 10, width: '100%', padding: '11px 16px', borderRadius: 10, border: 'none',
+        background: unchanged ? theme.rule : theme.ink,
+        color: unchanged ? theme.inkMuted : (theme.accentInk || '#fff'),
+        fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700,
+        cursor: (submitting || unchanged) ? 'not-allowed' : 'pointer',
+      }}>
+        {submitting ? 'Submitting…' : done ? 'Submitted for approval ✓' : 'Submit for approval'}
+      </button>
+      <div style={{ fontSize: 11, color: theme.inkMuted, marginTop: 6, lineHeight: 1.4 }}>
+        Your reason is sent to an admin to approve before it's applied.
+      </div>
+    </div>
+  );
+}
+
+function ClientDetail({ state, ca, theme, clientId, navigate, isAdmin, onCancelAccount, onUpdateClient, onRequestCancelReason }) {
   const [tab, setTab] = React.useState('overview');
   // Bobby 2026-05-05: history view consolidates every log type for a client
   // and groups them by month or week. Toggle persists per-session per-client.
@@ -245,6 +287,9 @@ function ClientDetail({ state, ca, theme, clientId, navigate, isAdmin, onCancelA
                       cursor: 'pointer',
                     }}
                   >Edit Cancellation</button>
+                )}
+                {!isAdmin && onRequestCancelReason && (
+                  <CACancelReasonPicker theme={theme} client={client} cancelReasons={state.cancelReasons || []} onSubmit={onRequestCancelReason} />
                 )}
               </div>
             ) : (

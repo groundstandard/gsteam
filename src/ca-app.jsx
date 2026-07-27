@@ -455,19 +455,26 @@ function ActivityRow({ theme, title, date, kind, isLast }) {
 function CABook({ state, ca, theme, navigate, initialFilter }) {
   const [filter, setFilter] = React.useState(initialFilter || 'all');
   const myClients = state.clients.filter(c => c.assignedCA === ca.id && !c.cancelDate);
+  // Cancelled accounts are reachable via the "Cancelled" filter so a CA can set
+  // their cancel reason (Bobby 2026-07-27).
+  const cancelledClients = state.clients.filter(c => c.assignedCA === ca.id && c.cancelDate);
   const currentMonth = CABT_currentMonthIso();
 
-  const enriched = myClients.map(c => {
+  const enrich = (c) => {
     const sub = CABT_clientSubScores(c, state.monthlyMetrics, state.surveys, state.config);
     const lastMetric = state.monthlyMetrics
       .filter(m => m.clientId === c.id)
       .sort((a, b) => b.month.localeCompare(a.month))[0];
-    const needsData = !state.monthlyMetrics.some(m => m.clientId === c.id && m.month === currentMonth);
+    const needsData = !c.cancelDate && !state.monthlyMetrics.some(m => m.clientId === c.id && m.month === currentMonth);
     return { client: c, sub, lastMetric, needsData, status: CABT_scoreToStatus(sub.composite) };
-  });
+  };
+  const enriched = myClients.map(enrich);
+  const enrichedCancelled = cancelledClients.map(enrich);
 
   let filtered = enriched;
-  if (filter === 'green' || filter === 'yellow' || filter === 'red' || filter === 'gray') {
+  if (filter === 'cancelled') {
+    filtered = enrichedCancelled;
+  } else if (filter === 'green' || filter === 'yellow' || filter === 'red' || filter === 'gray') {
     filtered = enriched.filter(e => e.status === filter);
   } else if (filter === 'needs-data') {
     filtered = enriched.filter(e => e.needsData);
@@ -483,6 +490,7 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
     { value: 'yellow',      label: 'Watch',      count: enriched.filter(e => e.status === 'yellow').length },
     { value: 'green',       label: 'On track',   count: enriched.filter(e => e.status === 'green').length },
     { value: 'needs-data',  label: 'Needs data', count: enriched.filter(e => e.needsData).length },
+    { value: 'cancelled',   label: 'Cancelled',  count: enrichedCancelled.length },
   ];
 
   return (
