@@ -188,6 +188,7 @@ function ClientDetail({ state, ca, theme, clientId, navigate, isAdmin, onCancelA
         tabs={[
           { value: 'overview',  label: 'Overview' },
           { value: 'dashboard', label: 'Dashboard' },
+          { value: 'charts',    label: 'Charts' },
           { value: 'history',   label: 'History' },
           { value: 'timeline',  label: `Timeline · ${cTimeline.length}` },
           { value: 'metrics',   label: `Metrics · ${cMetrics.length}` },
@@ -351,6 +352,10 @@ function ClientDetail({ state, ca, theme, clientId, navigate, isAdmin, onCancelA
           cMonthly={cMonthly}
           navigate={navigate}
         />
+      )}
+
+      {tab === 'charts' && (
+        <ClientChartsTab state={state} theme={theme} client={client} />
       )}
 
       {tab === 'history' && (() => {
@@ -987,6 +992,151 @@ function EmptyState({ theme, text }) {
 // Cadence toggle: Week / Month / Quarter / Year / All (no grouping).
 // Reuses ColumnChooserModal from admin-extra.jsx for the gear-icon column
 // chooser (same pattern + persistence as TKT-12.3).
+// Per-account monthly history bar charts (Kurt 2026-07-27). One metric and one
+// year at a time — revenue, cost per lead, sign-ups, cancels, or student count,
+// by month. Reads the effective monthly metrics (weekly rows rolled up), so
+// weekly-cadence clients chart the same way.
+const CHART_METRICS = [
+  { key: 'revenue',  label: 'Revenue',     field: 'clientGrossRevenue', money: true },
+  { key: 'leadCost', label: 'Cost / lead', field: 'leadCost',           money: true },
+  { key: 'signups',  label: 'Sign-ups',    field: 'leadsSigned',        money: false },
+  { key: 'cancels',  label: 'Cancels',     field: 'studentsCancelled',  money: false },
+  { key: 'students', label: 'Students',    field: 'totalStudentsStart', money: false },
+];
+const CHART_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function ClientChartsTab({ state, theme, client }) {
+  const [metricKey, setMetricKey] = React.useState('revenue');
+  const metric = CHART_METRICS.find(m => m.key === metricKey) || CHART_METRICS[0];
+
+  const eff = React.useMemo(
+    () => CABT_effectiveMonthlyMetrics(state.monthlyMetrics, state.weeklyMetrics, client.id),
+    [state.monthlyMetrics, state.weeklyMetrics, client.id]
+  );
+  const years = React.useMemo(() => {
+    const set = new Set(eff.map(m => (m.month || '').slice(0, 4)).filter(Boolean));
+    const arr = Array.from(set).sort();
+    return arr.length ? arr : [String(new Date().getFullYear())];
+  }, [eff]);
+  const [year, setYear] = React.useState(years[years.length - 1]);
+  React.useEffect(() => { if (!years.includes(year)) setYear(years[years.length - 1]); }, [years.join(',')]);
+
+  const values = React.useMemo(() => {
+    const arr = new Array(12).fill(null);
+    eff.forEach(m => {
+      if (!m.month || m.month.slice(0, 4) !== year) return;
+      const mo = Number(m.month.slice(5, 7)) - 1;
+      if (mo < 0 || mo > 11) return;
+      const v = Number(m[metric.field]);
+      if (Number.isFinite(v)) arr[mo] = v;
+    });
+    return arr;
+  }, [eff, year, metric]);
+
+  const hasData = values.some(v => v != null);
+  const fmtVal = (v) => v == null ? '—' : (metric.money ? CABT_fmtMoney(v) : Number(v).toLocaleString());
+  const fmtAxis = (v) => {
+    if (metric.money) {
+      if (Math.abs(v) >= 1000) return '$' + (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'k';
+      return '$' + Math.round(v);
+    }
+    return Number(v).toLocaleString();
+  };
+
+  // Chart geometry
+  const W = 720, H = 320, padL = 60, padR = 14, padT = 26, padB = 34;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const rawMax = Math.max(0, ...values.map(v => Number(v) || 0));
+  const niceMax = (() => {
+    if (rawMax <= 0) return 1;
+    const pow = Math.pow(10, Math.floor(Math.log10(rawMax)));
+    return Math.ceil(rawMax / pow) * pow || 1;
+  })();
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => f * niceMax);
+  const bandW = plotW / 12;
+  const barW = Math.min(38, bandW * 0.62);
+  const BAR = '#4f7cc4';
+
+  const contributing = values.filter(v => v != null);
+  const totalV = contributing.reduce((s, v) => s + (Number(v) || 0), 0);
+  const avgV = contributing.length ? totalV / contributing.length : 0;
+
+  return (
+    <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {CHART_METRICS.map(m => (
+            <button key={m.key} onClick={() => setMetricKey(m.key)} style={{
+              padding: '6px 12px', fontSize: 12.5, fontWeight: 700, borderRadius: 999,
+              fontFamily: 'inherit', cursor: 'pointer',
+              background: m.key === metricKey ? theme.ink : theme.surface,
+              color: m.key === metricKey ? (theme.accentInk || '#fff') : theme.ink,
+              border: `1px solid ${m.key === metricKey ? theme.ink : theme.rule}`,
+            }}>{m.label}</button>
+          ))}
+        </div>
+        <div style={{ marginLeft: 'auto', minWidth: 96 }}>
+          <Select value={year} onChange={setYear} options={years.map(y => ({ value: y, label: y }))} theme={theme} />
+        </div>
+      </div>
+
+      <Card theme={theme} padding={16}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: theme.ink }}>{metric.label} by month · {year}</div>
+          {hasData && (
+            <div style={{ fontSize: 12, color: theme.inkMuted }}>
+              Total <strong style={{ color: theme.ink }}>{fmtVal(totalV)}</strong> · Avg <strong style={{ color: theme.ink }}>{fmtVal(Math.round(avgV))}</strong>
+            </div>
+          )}
+        </div>
+
+        {!hasData ? (
+          <div style={{ padding: '40px 0', textAlign: 'center', color: theme.inkMuted, fontSize: 13 }}>
+            No {metric.label.toLowerCase()} data for {year}.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ minWidth: 560, display: 'block' }} role="img" aria-label={`${metric.label} by month for ${year}`}>
+              {yTicks.map((t, i) => {
+                const y = padT + plotH - (t / niceMax) * plotH;
+                return (
+                  <g key={`t${i}`}>
+                    <line x1={padL} y1={y} x2={W - padR} y2={y} stroke={theme.rule} strokeWidth="1"/>
+                    <text x={padL - 8} y={y + 3.5} textAnchor="end" fontSize="10" fill={theme.inkMuted}>{fmtAxis(t)}</text>
+                  </g>
+                );
+              })}
+              {values.map((v, i) => {
+                const val = Number(v) || 0;
+                const h = niceMax > 0 ? (val / niceMax) * plotH : 0;
+                const x = padL + i * bandW + (bandW - barW) / 2;
+                const y = padT + plotH - h;
+                return (
+                  <g key={`b${i}`}>
+                    {v != null && val > 0 && <rect x={x} y={y} width={barW} height={Math.max(0, h)} rx="3" fill={BAR}/>}
+                    {v != null && val > 0 && (
+                      <text x={x + barW / 2} y={y - 5} textAnchor="middle" fontSize="9.5" fontWeight="600" fill={theme.ink}>
+                        {metric.money ? fmtAxis(val) : Number(val).toLocaleString()}
+                      </text>
+                    )}
+                    <text x={padL + i * bandW + bandW / 2} y={padT + plotH + 16} textAnchor="middle" fontSize="10" fill={theme.inkMuted}>{CHART_MONTHS[i]}</text>
+                  </g>
+                );
+              })}
+              <line x1={padL} y1={padT + plotH} x2={W - padR} y2={padT + plotH} stroke={theme.inkMuted} strokeWidth="1.5"/>
+            </svg>
+          </div>
+        )}
+      </Card>
+
+      <div style={{ fontSize: 11.5, color: theme.inkMuted, lineHeight: 1.5 }}>
+        Per-account monthly history — pick a metric and a year. Weekly-logged months are rolled up. Revenue is gross revenue.
+      </div>
+    </div>
+  );
+}
+
 function ClientDashboardTab({ state, theme, client, cMonthlyMetrics, cWeeklyMetrics, cEvents, cSurveys, cWeekly, cMonthly, navigate }) {
   // Persisted preferences — scoped to "client-dashboard" so they don't
   // collide with the all-accounts dashboard's preferences.
