@@ -486,13 +486,42 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
   // (Bobby 2026-07-27).
   const cancelledClients = state.clients.filter(c => c.assignedCA === ca.id && c.cancelDate);
 
+  // Missing-data report (Bobby 2026-07-28): which monthly METRICS months an
+  // eligible account still hasn't filled for the selected window. Growth events
+  // (reviews / referrals) are deliberately NOT counted — a zero there can be
+  // legitimate. Only the monthly metrics are required "for all three months."
+  // Months before the account's sign month, and months still in the future,
+  // are never flagged as missing.
+  const missingMetricMonths = (c) => {
+    const signIso = c.signDate ? (String(c.signDate).slice(0, 7) + '-01') : qSel.start;
+    const startM  = signIso > qSel.start ? signIso : qSel.start;
+    const qEndM   = qSel.end.slice(0, 7) + '-01';
+    const endM    = qEndM < currentMonth ? qEndM : currentMonth; // never past the current month
+    if (startM > endM) return { missing: [], expected: 0 };
+    const filled = new Set(
+      CABT_effectiveMonthlyMetrics(state.monthlyMetrics, state.weeklyMetrics || [], c.id).map(m => m.month)
+    );
+    const missing = [];
+    let expected = 0;
+    const d = new Date(startM + 'T00:00:00');
+    const end = new Date(endM + 'T00:00:00');
+    while (d <= end) {
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+      expected += 1;
+      if (!filled.has(iso)) missing.push(iso);
+      d.setMonth(d.getMonth() + 1);
+    }
+    return { missing, expected };
+  };
+
   const enrich = (c) => {
     const sub = CABT_clientSubScores(c, state.monthlyMetrics, state.surveys, viewCfg, new Date(), state.weeklyMetrics || []);
     const lastMetric = state.monthlyMetrics
       .filter(m => m.clientId === c.id)
       .sort((a, b) => b.month.localeCompare(a.month))[0];
     const needsData = !c.cancelDate && !state.monthlyMetrics.some(m => m.clientId === c.id && m.month === currentMonth);
-    return { client: c, sub, lastMetric, needsData, status: CABT_scoreToStatus(sub.composite) };
+    const md = missingMetricMonths(c);
+    return { client: c, sub, lastMetric, needsData, missing: md.missing, expected: md.expected, status: CABT_scoreToStatus(sub.composite) };
   };
   const enriched = scoredClients.map(enrich);
   const enrichedNotScored = notScoredClients.map(enrich);
@@ -503,27 +532,34 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
     filtered = enrichedCancelled;
   } else if (filter === 'not-scored') {
     filtered = enrichedNotScored;
+  } else if (filter === 'missing-data') {
+    filtered = enriched.filter(e => e.missing.length > 0);
   } else if (filter === 'green' || filter === 'yellow' || filter === 'red' || filter === 'gray') {
     filtered = enriched.filter(e => e.status === filter);
   } else if (filter === 'needs-data') {
     filtered = enriched.filter(e => e.needsData);
   }
 
-  // Sort: red > yellow > gray > green
+  const isMissingView   = filter === 'missing-data';
+  const isNotScoredView = filter === 'not-scored';
+
+  // Missing-data view sorts by most months missing first; every other view by
+  // status severity (red > yellow > gray > green).
   const sortKey = { red: 0, yellow: 1, gray: 2, green: 3 };
-  filtered = filtered.slice().sort((a, b) => sortKey[a.status] - sortKey[b.status]);
+  filtered = filtered.slice().sort((a, b) =>
+    isMissingView ? (b.missing.length - a.missing.length) : (sortKey[a.status] - sortKey[b.status])
+  );
 
   const filters = [
-    { value: 'all',         label: 'All',        count: enriched.length },
-    { value: 'red',         label: 'At risk',    count: enriched.filter(e => e.status === 'red').length },
-    { value: 'yellow',      label: 'Watch',      count: enriched.filter(e => e.status === 'yellow').length },
-    { value: 'green',       label: 'On track',   count: enriched.filter(e => e.status === 'green').length },
-    { value: 'needs-data',  label: 'Needs data', count: enriched.filter(e => e.needsData).length },
-    { value: 'not-scored',  label: 'Not scored', count: enrichedNotScored.length },
-    { value: 'cancelled',   label: 'Cancelled',  count: enrichedCancelled.length },
+    { value: 'all',          label: 'All',          count: enriched.length },
+    { value: 'red',          label: 'At risk',      count: enriched.filter(e => e.status === 'red').length },
+    { value: 'yellow',       label: 'Watch',        count: enriched.filter(e => e.status === 'yellow').length },
+    { value: 'green',        label: 'On track',     count: enriched.filter(e => e.status === 'green').length },
+    { value: 'missing-data', label: 'Missing data', count: enriched.filter(e => e.missing.length > 0).length },
+    { value: 'needs-data',   label: 'Needs data',   count: enriched.filter(e => e.needsData).length },
+    { value: 'not-scored',   label: 'Not scored',   count: enrichedNotScored.length },
+    { value: 'cancelled',    label: 'Cancelled',    count: enrichedCancelled.length },
   ];
-
-  const isNotScoredView = filter === 'not-scored';
 
   return (
     <div style={{ paddingBottom: 100 }}>
@@ -586,32 +622,47 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
             These accounts aren’t Standard or VIP, so they’re <strong style={{ color: theme.inkSoft }}>not counted</strong> in any score or bonus — and don’t need data entered.
           </div>
         )}
+        {isMissingView && filtered.length > 0 && (
+          <div style={{ padding: '10px 2px 6px', fontSize: 12.5, color: theme.inkMuted, lineHeight: 1.5 }}>
+            <strong style={{ color: theme.inkSoft }}>{filtered.length}</strong> account{filtered.length === 1 ? '' : 's'} missing{' '}
+            <strong style={{ color: theme.inkSoft }}>{filtered.reduce((s, e) => s + e.missing.length, 0)}</strong> month{filtered.reduce((s, e) => s + e.missing.length, 0) === 1 ? '' : 's'} of metrics for <strong style={{ color: theme.inkSoft }}>{qSel.label}</strong>. Monthly metrics only — reviews / referrals aren’t counted as missing.
+          </div>
+        )}
         {filtered.length === 0 && (
           <div style={{ padding: '60px 0', textAlign: 'center', color: theme.inkMuted }}>
             <Icon name="check" size={36} />
-            <div style={{ marginTop: 8, fontSize: 14 }}>No clients match this filter.</div>
+            <div style={{ marginTop: 8, fontSize: 14 }}>
+              {isMissingView ? `Nothing missing for ${qSel.label}. 🎉` : 'No clients match this filter.'}
+            </div>
           </div>
         )}
-        {filtered.map((e, i) => (
-          <ClientRow
-            key={e.client.id}
-            client={e.client}
-            sub={e.sub}
-            lastMetric={e.lastMetric}
-            needsData={isNotScoredView ? false : e.needsData}
-            status={e.status}
-            theme={theme}
-            excluded={isNotScoredView}
-            onClick={() => navigate('client-detail', { clientId: e.client.id })}
-            isLast={i === filtered.length - 1}
-          />
-        ))}
+        {filtered.map((e, i) => {
+          const missingInfo = isMissingView
+            ? `Missing ${e.missing.length} of ${e.expected} · ${e.missing.map(m => CABT_fmtMonth(m)).join(', ')}`
+            : null;
+          return (
+            <ClientRow
+              key={e.client.id}
+              client={e.client}
+              sub={e.sub}
+              lastMetric={e.lastMetric}
+              needsData={isNotScoredView ? false : e.needsData}
+              status={e.status}
+              theme={theme}
+              excluded={isNotScoredView}
+              missingInfo={missingInfo}
+              missingCount={isMissingView ? e.missing.length : null}
+              onClick={() => navigate('client-detail', { clientId: e.client.id })}
+              isLast={i === filtered.length - 1}
+            />
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function ClientRow({ client, sub, lastMetric, needsData, status, theme, onClick, isLast, excluded }) {
+function ClientRow({ client, sub, lastMetric, needsData, status, theme, onClick, isLast, excluded, missingInfo, missingCount }) {
   const score = sub.composite;
   return (
     <button
@@ -625,7 +676,8 @@ function ClientRow({ client, sub, lastMetric, needsData, status, theme, onClick,
       }}
     >
       <div style={{
-        width: 6, alignSelf: 'stretch', background: excluded ? theme.rule : STATUS[status],
+        width: 6, alignSelf: 'stretch',
+        background: missingInfo ? STATUS.yellow : (excluded ? theme.rule : STATUS[status]),
         borderRadius: 3, flexShrink: 0,
       }} />
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -635,24 +687,25 @@ function ClientRow({ client, sub, lastMetric, needsData, status, theme, onClick,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>{client.name}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, fontSize: 12, color: theme.inkMuted }}>
-          {excluded ? (
+          {missingInfo ? (
+            <span style={{ color: STATUS.yellow, fontWeight: 600 }}>{missingInfo}</span>
+          ) : excluded ? (
             <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{client.tier || 'Not scored'}</span>
           ) : needsData ? (
             <span style={{ color: STATUS.yellow, fontWeight: 600 }}>⚠ No data this month</span>
           ) : (
             <span>Last: {lastMetric ? CABT_fmtMonth(lastMetric.month) : '—'}</span>
           )}
-          <span>·</span>
-          <span>{CABT_fmtMoney(client.monthlyRetainer)}/mo</span>
+          {!missingInfo && <><span>·</span><span>{CABT_fmtMoney(client.monthlyRetainer)}/mo</span></>}
         </div>
       </div>
       <div style={{
         textAlign: 'right', flexShrink: 0,
-        fontSize: excluded ? 12 : 18, fontWeight: 700,
-        color: excluded ? theme.inkMuted : STATUS[status],
+        fontSize: (excluded && !missingInfo) ? 12 : 18, fontWeight: 700,
+        color: missingInfo ? STATUS.yellow : (excluded ? theme.inkMuted : STATUS[status]),
         fontVariantNumeric: 'tabular-nums', letterSpacing: -0.3,
       }}>
-        {excluded ? 'Not counted' : (score != null ? (score * 100).toFixed(0) : '—')}
+        {missingInfo ? missingCount : (excluded ? 'Not counted' : (score != null ? (score * 100).toFixed(0) : '—'))}
       </div>
       <Icon name="chev-r" size={16} color={theme.inkMuted} />
     </button>
