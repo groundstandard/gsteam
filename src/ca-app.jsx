@@ -454,26 +454,55 @@ function ActivityRow({ theme, title, date, kind, isLast }) {
 // list view again — no internal view toggle.
 function CABook({ state, ca, theme, navigate, initialFilter }) {
   const [filter, setFilter] = React.useState(initialFilter || 'all');
-  const myClients = state.clients.filter(c => c.assignedCA === ca.id && !c.cancelDate);
-  // Cancelled accounts are reachable via the "Cancelled" filter so a CA can set
-  // their cancel reason (Bobby 2026-07-27).
-  const cancelledClients = state.clients.filter(c => c.assignedCA === ca.id && c.cancelDate);
   const currentMonth = CABT_currentMonthIso();
 
+  // Quarter / cumulative selector (Bobby 2026-07-28): view account scores per
+  // quarter — and always show which window they're for — instead of only the
+  // one configured quarter. Local view only; never touches global config.
+  // Mirrors the per-client calc + Scorecard selectors.
+  const cfg = state.config || {};
+  const cfgStart = cfg.quarterStart || cfg.quarter_start || '';
+  const parsedYr = new Date(cfgStart || new Date()).getFullYear();
+  const year = Number.isFinite(parsedYr) ? parsedYr : new Date().getFullYear();
+  const quarters = CABT_quartersOfYear(year);
+  const cumulative = { key: `${year}-CUM`, label: `${year} cumulative`, start: `${year}-01-01`, end: `${year}-12-31` };
+  const qOptions = [...quarters, cumulative];
+  const qDefault = quarters.find(q => q.start === cfgStart) || cumulative;
+  const [qSelKey, setQSelKey] = React.useState(qDefault.key);
+  const qSel = qOptions.find(o => o.key === qSelKey) || qDefault;
+  const viewCfg = { ...cfg, quarterStart: qSel.start, quarterEnd: qSel.end };
+
+  // Only Standard/VIP accounts are scored. Everyone else (Reach, A-la-carte) is
+  // excluded from every calculation — kept in a separate "Not scored" tab so the
+  // scored list matches exactly what's calculated (Bobby 2026-07-28).
+  const isEligible = (c) => {
+    const t = (c.tier || '').toLowerCase();
+    return t === 'standard' || t === 'vip';
+  };
+  const activeClients    = state.clients.filter(c => c.assignedCA === ca.id && !c.cancelDate);
+  const scoredClients    = activeClients.filter(isEligible);
+  const notScoredClients = activeClients.filter(c => !isEligible(c));
+  // Cancelled accounts stay reachable so a CA can set their cancel reason
+  // (Bobby 2026-07-27).
+  const cancelledClients = state.clients.filter(c => c.assignedCA === ca.id && c.cancelDate);
+
   const enrich = (c) => {
-    const sub = CABT_clientSubScores(c, state.monthlyMetrics, state.surveys, state.config);
+    const sub = CABT_clientSubScores(c, state.monthlyMetrics, state.surveys, viewCfg, new Date(), state.weeklyMetrics || []);
     const lastMetric = state.monthlyMetrics
       .filter(m => m.clientId === c.id)
       .sort((a, b) => b.month.localeCompare(a.month))[0];
     const needsData = !c.cancelDate && !state.monthlyMetrics.some(m => m.clientId === c.id && m.month === currentMonth);
     return { client: c, sub, lastMetric, needsData, status: CABT_scoreToStatus(sub.composite) };
   };
-  const enriched = myClients.map(enrich);
+  const enriched = scoredClients.map(enrich);
+  const enrichedNotScored = notScoredClients.map(enrich);
   const enrichedCancelled = cancelledClients.map(enrich);
 
   let filtered = enriched;
   if (filter === 'cancelled') {
     filtered = enrichedCancelled;
+  } else if (filter === 'not-scored') {
+    filtered = enrichedNotScored;
   } else if (filter === 'green' || filter === 'yellow' || filter === 'red' || filter === 'gray') {
     filtered = enriched.filter(e => e.status === filter);
   } else if (filter === 'needs-data') {
@@ -482,7 +511,7 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
 
   // Sort: red > yellow > gray > green
   const sortKey = { red: 0, yellow: 1, gray: 2, green: 3 };
-  filtered.sort((a, b) => sortKey[a.status] - sortKey[b.status]);
+  filtered = filtered.slice().sort((a, b) => sortKey[a.status] - sortKey[b.status]);
 
   const filters = [
     { value: 'all',         label: 'All',        count: enriched.length },
@@ -490,8 +519,11 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
     { value: 'yellow',      label: 'Watch',      count: enriched.filter(e => e.status === 'yellow').length },
     { value: 'green',       label: 'On track',   count: enriched.filter(e => e.status === 'green').length },
     { value: 'needs-data',  label: 'Needs data', count: enriched.filter(e => e.needsData).length },
+    { value: 'not-scored',  label: 'Not scored', count: enrichedNotScored.length },
     { value: 'cancelled',   label: 'Cancelled',  count: enrichedCancelled.length },
   ];
+
+  const isNotScoredView = filter === 'not-scored';
 
   return (
     <div style={{ paddingBottom: 100 }}>
@@ -501,6 +533,31 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
         padding: '8px 16px 12px',
         borderBottom: `1px solid ${theme.rule}`,
       }}>
+        {/* Quarter / cumulative selector + active-window label — so it's always
+            clear which quarter these scores are for (Bobby 2026-07-28). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+          {qOptions.map((o, i) => {
+            const isCum = o.key === cumulative.key;
+            const st = isCum ? 'past' : CABT_quarterStatus(o.start, o.end);
+            const isSel = o.key === qSelKey;
+            const disabled = st === 'future';
+            return (
+              <button key={o.key} disabled={disabled} onClick={() => setQSelKey(o.key)} style={{
+                padding: '6px 12px', fontSize: 12, fontWeight: 700, borderRadius: 999,
+                fontFamily: 'inherit', cursor: disabled ? 'not-allowed' : 'pointer',
+                background: isSel ? theme.ink : theme.surface,
+                color: isSel ? (theme.accentInk || '#fff') : theme.ink,
+                border: `1px solid ${isSel ? theme.ink : theme.rule}`,
+                opacity: disabled ? 0.4 : 1,
+              }}>
+                {isCum ? 'Cumulative' : `Q${i + 1}`}{st === 'current' ? ' · live' : ''}
+              </button>
+            );
+          })}
+          <span style={{ fontSize: 12, color: theme.inkMuted, marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+            Showing <strong style={{ color: theme.inkSoft }}>{qSel.label}</strong>
+          </span>
+        </div>
         <div style={{
           display: 'flex', gap: 8, overflowX: 'auto', WebkitOverflowScrolling: 'touch',
           scrollbarWidth: 'none', margin: '0 -16px', padding: '0 16px',
@@ -524,6 +581,11 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
         </div>
       </div>
       <div style={{ padding: '4px 16px' }}>
+        {isNotScoredView && filtered.length > 0 && (
+          <div style={{ padding: '10px 2px 6px', fontSize: 12.5, color: theme.inkMuted, lineHeight: 1.5 }}>
+            These accounts aren’t Standard or VIP, so they’re <strong style={{ color: theme.inkSoft }}>not counted</strong> in any score or bonus — and don’t need data entered.
+          </div>
+        )}
         {filtered.length === 0 && (
           <div style={{ padding: '60px 0', textAlign: 'center', color: theme.inkMuted }}>
             <Icon name="check" size={36} />
@@ -536,9 +598,10 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
             client={e.client}
             sub={e.sub}
             lastMetric={e.lastMetric}
-            needsData={e.needsData}
+            needsData={isNotScoredView ? false : e.needsData}
             status={e.status}
             theme={theme}
+            excluded={isNotScoredView}
             onClick={() => navigate('client-detail', { clientId: e.client.id })}
             isLast={i === filtered.length - 1}
           />
@@ -548,7 +611,7 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
   );
 }
 
-function ClientRow({ client, sub, lastMetric, needsData, status, theme, onClick, isLast }) {
+function ClientRow({ client, sub, lastMetric, needsData, status, theme, onClick, isLast, excluded }) {
   const score = sub.composite;
   return (
     <button
@@ -562,7 +625,7 @@ function ClientRow({ client, sub, lastMetric, needsData, status, theme, onClick,
       }}
     >
       <div style={{
-        width: 6, alignSelf: 'stretch', background: STATUS[status],
+        width: 6, alignSelf: 'stretch', background: excluded ? theme.rule : STATUS[status],
         borderRadius: 3, flexShrink: 0,
       }} />
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -572,7 +635,9 @@ function ClientRow({ client, sub, lastMetric, needsData, status, theme, onClick,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>{client.name}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, fontSize: 12, color: theme.inkMuted }}>
-          {needsData ? (
+          {excluded ? (
+            <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{client.tier || 'Not scored'}</span>
+          ) : needsData ? (
             <span style={{ color: STATUS.yellow, fontWeight: 600 }}>⚠ No data this month</span>
           ) : (
             <span>Last: {lastMetric ? CABT_fmtMonth(lastMetric.month) : '—'}</span>
@@ -583,10 +648,11 @@ function ClientRow({ client, sub, lastMetric, needsData, status, theme, onClick,
       </div>
       <div style={{
         textAlign: 'right', flexShrink: 0,
-        fontSize: 18, fontWeight: 700, color: STATUS[status],
+        fontSize: excluded ? 12 : 18, fontWeight: 700,
+        color: excluded ? theme.inkMuted : STATUS[status],
         fontVariantNumeric: 'tabular-nums', letterSpacing: -0.3,
       }}>
-        {score != null ? (score * 100).toFixed(0) : '—'}
+        {excluded ? 'Not counted' : (score != null ? (score * 100).toFixed(0) : '—')}
       </div>
       <Icon name="chev-r" size={16} color={theme.inkMuted} />
     </button>
