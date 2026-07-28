@@ -17,10 +17,11 @@ config.js
 # Stray nested mirror of src/ — orphan, not used by index.html.
 src/src/
 
-# Local-only working docs (status tracker, scratch notes)
+# Local-only working docs (status tracker, scratch notes, daily EODs)
 PHASES.md
 NOTES.md
 TODO.md
+docs/
 
 # npm artifacts (this project has no package.json — Babel-in-browser)
 node_modules/

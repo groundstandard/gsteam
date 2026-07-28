@@ -162,7 +162,13 @@ function editReqResolveContext(req, state) {
   if (!stateKey) return null;
   const row = (state[stateKey] || []).find(r => r.id === req.rowId);
   if (!row) return null;
-  const client = (state.clients || []).find(c => c.id === row.clientId);
+  // For the clients table the row IS the client (its own id is the client id);
+  // child tables (metrics / check-ins / events / surveys) point at the client
+  // via clientId. Without this, a cancel-reason edit request on `clients`
+  // resolved row.clientId (undefined) and showed no client name.
+  const client = req.tableName === 'clients'
+    ? row
+    : (state.clients || []).find(c => c.id === row.clientId);
   let period = '';
   if (row.month)            period = CABT_fmtMonth(row.month);
   else if (row.weekStart)   period = `Week of ${CABT_fmtDate(row.weekStart)}`;
