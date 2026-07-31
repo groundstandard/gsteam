@@ -69,6 +69,74 @@ function ClientNotesCard({ theme, client, onUpdateClient }) {
   );
 }
 
+// Per-account meeting time (Kurt 2026-07-28: "add the note for the meeting time
+// as a custom field"). A short free-text field for the weekly call slot, e.g.
+// "Tuesday 11:30 AM". Display-only for scoring; saved to the client's
+// meeting_time field via the same path as Notes.
+function ClientMeetingTimeCard({ theme, client, onUpdateClient }) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(client.meetingTime || '');
+  const [saving, setSaving] = React.useState(false);
+  React.useEffect(() => { setDraft(client.meetingTime || ''); setEditing(false); }, [client.id, client.meetingTime]);
+
+  const cancel = () => { setDraft(client.meetingTime || ''); setEditing(false); };
+  const save = async () => {
+    if (saving || typeof onUpdateClient !== 'function') return;
+    setSaving(true);
+    try { await onUpdateClient(client.id, { meetingTime: draft.trim() }, 'Meeting time'); setEditing(false); }
+    finally { setSaving(false); }
+  };
+  const btn = (primary) => ({
+    padding: '7px 14px', fontSize: 12, fontWeight: primary ? 700 : 600,
+    borderRadius: 8, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+    background: primary ? theme.ink : theme.surface,
+    color: primary ? (theme.accentInk || '#fff') : theme.ink,
+    border: `1px solid ${primary ? theme.ink : theme.rule}`,
+  });
+
+  return (
+    <Card theme={theme}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <SectionLabel theme={theme}>Meeting time</SectionLabel>
+        {!editing && (
+          <button onClick={() => { setDraft(client.meetingTime || ''); setEditing(true); }} style={btn(false)}>
+            {client.meetingTime ? 'Edit' : 'Set time'}
+          </button>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: theme.inkMuted, marginBottom: 10, lineHeight: 1.5 }}>
+        Weekly call slot for this account — e.g. "Tuesday 11:30 AM". Not counted in any score.
+      </div>
+      {editing ? (
+        <>
+          <input
+            value={draft}
+            autoFocus
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
+            placeholder="e.g. Tuesday 11:30 AM"
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              padding: '10px 12px', fontSize: 14, lineHeight: 1.5,
+              fontFamily: 'inherit', color: theme.ink,
+              background: theme.bg, border: `1px solid ${theme.rule}`, borderRadius: 10,
+              outline: 'none',
+            }}
+          />
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button onClick={save} disabled={saving} style={btn(true)}>{saving ? 'Saving…' : 'Save'}</button>
+            <button onClick={cancel} disabled={saving} style={btn(false)}>Cancel</button>
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 15, fontWeight: 600, color: client.meetingTime ? theme.ink : theme.inkMuted }}>
+          {client.meetingTime || 'No meeting time set.'}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // CA-facing cancel-reason picker (Bobby 2026-07-27: "make it so [the CA] puts
 // the cancel reason and [the owner] approves"). Submits the chosen reason as an
 // edit request — it doesn't apply until an admin approves it in the queue.
@@ -322,6 +390,7 @@ function ClientDetail({ state, ca, theme, clientId, navigate, isAdmin, onCancelA
             )}
           </Card>
 
+          <ClientMeetingTimeCard theme={theme} client={client} onUpdateClient={onUpdateClient} />
           <ClientNotesCard theme={theme} client={client} onUpdateClient={onUpdateClient} />
         </div>
       )}
