@@ -535,9 +535,18 @@ function caScorecard(ca, state) {
   // the client's sign month). A client that signed mid-quarter is only
   // expected to have data from its sign month forward, and the book no
   // longer looks incomplete for months that pre-date the client.
+  //
+  // Kurt 2026-07-28: a client inside the 90-day grace period is already skipped
+  // by the performance sub-scores and the growth bucket — but book completeness
+  // still expected its months, so a brand-new account (e.g. one that signed
+  // mid-June) dragged the gate down on a book it had barely joined. Apply the
+  // same grace here so a new client is consistently not expected to have data
+  // yet. Uses `now` like clientSubScores' inGrace, not the quarter end.
+  const graceDays = _n(cfgGet(cfg, 'gracePeriodDays', 90));
   let expected = 0;
   let filled = 0;
   myClients.forEach(c => {
+    if (clientAgeDays(c, now) < graceDays) return;
     const signMonth = c.signDate ? firstOfMonth(c.signDate) : qStartIso;
     const effectiveStart = signMonth > qStartIso ? signMonth : qStartIso;
     // No expected months if the client signed after the quarter ended.

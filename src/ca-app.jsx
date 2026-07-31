@@ -492,7 +492,14 @@ function CABook({ state, ca, theme, navigate, initialFilter }) {
   // legitimate. Only the monthly metrics are required "for all three months."
   // Months before the account's sign month, and months still in the future,
   // are never flagged as missing.
+  const graceDays = Number(cfg.gracePeriodDays != null ? cfg.gracePeriodDays : 90) || 90;
   const missingMetricMonths = (c) => {
+    // Accounts still inside the 90-day grace period aren't expected to have data
+    // yet (same rule the scoring engine applies), so they're never "missing".
+    if (c.signDate) {
+      const ageDays = Math.floor((new Date() - new Date(c.signDate)) / 86400000);
+      if (ageDays < graceDays) return { missing: [], expected: 0 };
+    }
     const signIso = c.signDate ? (String(c.signDate).slice(0, 7) + '-01') : qSel.start;
     const startM  = signIso > qSel.start ? signIso : qSel.start;
     const qEndM   = qSel.end.slice(0, 7) + '-01';
