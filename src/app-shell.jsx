@@ -579,6 +579,20 @@ function App() {
       await CABT_api.upsertCallStatus({ id, status });
     }
   };
+  // Kurt 2026-07-28: a shared free-text note per account on the Calls board.
+  // Optimistic like setCallStatus; realtime echoes it to every viewer.
+  const setCallNote = async (id, note) => {
+    setState(s => {
+      const list = s.callStatuses || [];
+      const next = list.some(x => x.id === id)
+        ? list.map(x => x.id === id ? { ...x, note } : x)
+        : [...list, { id, note }];
+      return { ...s, callStatuses: next };
+    });
+    if (CABT_getApiMode() === 'supabase') {
+      await CABT_api.upsertCallStatus({ id, note });
+    }
+  };
   // Bobby 2026-05-15: dedicated "Cancel Account" flow — sets cancel_date +
   // cancel_reason directly on the clients row without going through monthly
   // metrics. Admin/owner only. Also supports retroactive edits on already-
@@ -715,7 +729,7 @@ function App() {
         case 'log-survey': return <LogSurveyForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} editingId={route.params.editingId} navigate={navigate} onSubmit={submitSurvey} onDelete={deleteSurvey} isAdmin={isAdminAuth}/>;
         case 'log-checkin': return <LogCheckinForm state={state} ca={ca} theme={theme} presetClientId={route.params.clientId} navigate={navigate} onSubmit={submitCheckin}/>;
         case 'scorecard': return <CAScorecard state={state} ca={ca} theme={theme} viz={t.scorecardViz}/>;
-        case 'calls-board': return <CallsBoard state={state} theme={theme} navigate={navigate} isAdmin={isAdminAuth} onSetStatus={setCallStatus}/>;
+        case 'calls-board': return <CallsBoard state={state} theme={theme} navigate={navigate} isAdmin={isAdminAuth} onSetNote={setCallNote}/>;
         case 'profile': return <CAProfile state={state} ca={ca} theme={theme} navigate={navigate} profile={authedProfile} onSignOut={signOutHandler}/>;
         default: return null;
       }
@@ -762,7 +776,7 @@ function App() {
       case 'bulk-cadence': return <AdminBulkCadence state={state} theme={theme} navigate={navigate}/>;
       case 'formula-configurator': return <AdminConfig state={state} theme={theme} onUpdate={updateConfig}/>;
       case 'roster':      return <AdminRoster state={state} theme={theme} onReload={reloadLive} onToast={showToast}/>;
-      case 'calls-board': return <CallsBoard state={state} theme={theme} navigate={navigate} isAdmin={isAdminAuth} onSetStatus={setCallStatus}/>;
+      case 'calls-board': return <CallsBoard state={state} theme={theme} navigate={navigate} isAdmin={isAdminAuth} onSetNote={setCallNote}/>;
       case 'more':        return <AdminMore theme={theme} navigate={navigate} profile={authedProfile} onSignOut={signOutHandler}/>;
       default: return null;
     }

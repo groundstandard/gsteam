@@ -286,7 +286,11 @@ const CABT_api = {
     if (CABT_getApiMode() !== 'supabase') return row;
     const sb = await CABT_sb();
     const { data: { user } } = await sb.auth.getUser();
-    const payload = { id: row.id, status: row.status, updated_at: new Date().toISOString(), updated_by: user?.id || null };
+    // Only send the fields provided so a note upsert doesn't clobber status and
+    // vice-versa (on-conflict updates only the columns present in the payload).
+    const payload = { id: row.id, updated_at: new Date().toISOString(), updated_by: user?.id || null };
+    if (row.status !== undefined) payload.status = row.status;
+    if (row.note   !== undefined) payload.note   = row.note;
     const { data, error } = await sb.from('call_statuses').upsert(payload, { onConflict: 'id' }).select().single();
     if (error) throw error;
     return toUI(data);
