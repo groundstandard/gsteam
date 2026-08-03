@@ -2837,6 +2837,24 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
   const money = (n) => (n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const pct = (n) => (n == null ? '—' : (n * 100).toFixed(0));
   const pctRate = (n) => (n == null ? '—' : (n * 100).toFixed(1) + '%');
+  // Kurt 2026-08-03: a funnel rate can legitimately exceed 100% — family
+  // members, walk-ins, and reactivated students sign up without passing through
+  // the previous step. Mark those with an asterisk that explains itself on
+  // hover, so the number doesn't just read as an error.
+  const OVER_100_NOTE = 'Over 100% — more than the previous step. This can be legitimate: '
+    + 'family members, walk-ins, or reactivated students who signed up without '
+    + 'going through the full funnel.';
+  const pctRateFlagged = (n) => {
+    if (n == null) return '—';
+    const txt = (n * 100).toFixed(1) + '%';
+    if (n <= 1) return txt;
+    return (
+      <span title={OVER_100_NOTE} style={{ cursor: 'help' }}>
+        {txt}
+        <span style={{ color: STATUS.yellow, fontWeight: 800, marginLeft: 2 }}>*</span>
+      </span>
+    );
+  };
   const status = (n) => (n == null ? 'gray' : (n >= 0.80 ? 'green' : n >= 0.60 ? 'yellow' : 'red'));
   const formatDate = (iso) => {
     if (!iso) return '—';
@@ -2910,11 +2928,11 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
     // Labels mirror the count columns they sit beside (Booked → Booked %), per
     // Kurt 2026-07-29: booked ÷ leads, showed ÷ booked, signed ÷ showed.
     { id: 'bookingRate',  label: 'Booked %',     group: 'Funnel',   align: 'right', sortKey: 'bookingRate',
-      mono: true, render: (r) => pctRate(r.bookingRate) },
+      mono: true, render: (r) => pctRateFlagged(r.bookingRate) },
     { id: 'showRate',     label: 'Showed %',     group: 'Funnel',   align: 'right', sortKey: 'showRate',
-      mono: true, render: (r) => pctRate(r.showRate) },
+      mono: true, render: (r) => pctRateFlagged(r.showRate) },
     { id: 'closeRate',    label: 'Signed %',     group: 'Funnel',   align: 'right', sortKey: 'closeRate',
-      mono: true, render: (r) => pctRate(r.closeRate) },
+      mono: true, render: (r) => pctRateFlagged(r.closeRate) },
     // Students
     { id: 'studentsStart', label: 'Students',    group: 'Students', align: 'right', sortKey: 'studentsStart',
       mono: true, render: (r) => fmt(r.studentsStart) },
