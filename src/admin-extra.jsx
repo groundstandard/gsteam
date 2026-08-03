@@ -3335,6 +3335,27 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
         </table>
       </div>
 
+      {/* Asterisk legend — the hover note on an over-100% rate is desktop-only,
+          so spell it out under the table too. Only rendered when a visible rate
+          column actually has one on this page. */}
+      {(() => {
+        const RATE_IDS = ['bookingRate', 'showRate', 'closeRate'];
+        const shown = RATE_IDS.filter(id => visibleCols.has(id));
+        const hasOver = shown.length > 0
+          && paged.some(r => shown.some(id => r[id] != null && r[id] > 1));
+        if (!hasOver) return null;
+        return (
+          <div style={{
+            marginTop: 8, fontSize: 11.5, color: theme.inkMuted, lineHeight: 1.5,
+          }}>
+            <span style={{ color: STATUS.yellow, fontWeight: 800 }}>*</span>
+            {' '}Over 100% — more than the previous step. Usually family members,
+            walk-ins, or reactivated students who signed up without going through
+            the full funnel.
+          </div>
+        );
+      })()}
+
       {chooserOpen && (
         <ColumnChooserModal
           theme={theme}
