@@ -2456,14 +2456,26 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
     'code', 'name', 'tier', 'caName', 'status', 'signDate', 'monthsOnBook',
     'mrr', 'revenue', 'adSpend', 'leadCost',
     'leadsGenerated', 'apptsBooked', 'leadsShowed', 'leadsSigned',
+    // Kurt 2026-07-29: show the funnel conversion rates next to the raw counts
+    // (booked ÷ leads, showed ÷ booked, signed ÷ showed) — they already existed
+    // in the registry but were off by default, so nobody saw them.
+    'bookingRate', 'showRate', 'closeRate',
     'studentsCancelled',
     'composite', 'performanceScore', 'retentionScore', 'growthScore',
     'lastMetric', 'monthsCoverage',
   ];
-  const [visibleCols, setVisibleCols] = React.useState(() =>
-    new Set(lsGet('dash:cols:v2', DEFAULT_VISIBLE_COLS))
-  );
-  React.useEffect(() => { lsSet('dash:cols:v2', Array.from(visibleCols)); }, [visibleCols]);
+  // Column choices persist per browser, so simply adding a column to
+  // DEFAULT_VISIBLE_COLS would never reach anyone who already has a saved set.
+  // v3 migrates the v2 selection forward and folds in the funnel-rate columns,
+  // so the new columns appear without wiping anyone's customisation.
+  const [visibleCols, setVisibleCols] = React.useState(() => {
+    const v3 = lsGet('dash:cols:v3', null);
+    if (v3) return new Set(v3);
+    const v2 = lsGet('dash:cols:v2', null);
+    if (v2) return new Set([...v2, 'bookingRate', 'showRate', 'closeRate']);
+    return new Set(DEFAULT_VISIBLE_COLS);
+  });
+  React.useEffect(() => { lsSet('dash:cols:v3', Array.from(visibleCols)); }, [visibleCols]);
   const [chooserOpen, setChooserOpen] = React.useState(false);
 
   // Bobby 2026-05-15: sticky Client column was covering data on phones.
@@ -2895,11 +2907,13 @@ function AdminDashboard({ state, theme, navigate, scopeCa }) {
       mono: true, render: (r) => fmt(r.leadsShowed) },
     { id: 'leadsSigned',  label: 'Signed',       group: 'Funnel',   align: 'right', sortKey: 'leadsSigned',
       mono: true, render: (r) => fmt(r.leadsSigned) },
-    { id: 'bookingRate',  label: 'Booking %',    group: 'Funnel',   align: 'right', sortKey: 'bookingRate',
+    // Labels mirror the count columns they sit beside (Booked → Booked %), per
+    // Kurt 2026-07-29: booked ÷ leads, showed ÷ booked, signed ÷ showed.
+    { id: 'bookingRate',  label: 'Booked %',     group: 'Funnel',   align: 'right', sortKey: 'bookingRate',
       mono: true, render: (r) => pctRate(r.bookingRate) },
-    { id: 'showRate',     label: 'Show %',       group: 'Funnel',   align: 'right', sortKey: 'showRate',
+    { id: 'showRate',     label: 'Showed %',     group: 'Funnel',   align: 'right', sortKey: 'showRate',
       mono: true, render: (r) => pctRate(r.showRate) },
-    { id: 'closeRate',    label: 'Close %',      group: 'Funnel',   align: 'right', sortKey: 'closeRate',
+    { id: 'closeRate',    label: 'Signed %',     group: 'Funnel',   align: 'right', sortKey: 'closeRate',
       mono: true, render: (r) => pctRate(r.closeRate) },
     // Students
     { id: 'studentsStart', label: 'Students',    group: 'Students', align: 'right', sortKey: 'studentsStart',
