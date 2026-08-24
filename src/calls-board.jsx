@@ -36,8 +36,8 @@ const CALLS_GRID = {
   '1:30 PM':  [null, null, 'Infinity', 'Scottsdale', null],
   '2:00 PM':  ['Miami', 'Jiu Jitsu Modern', 'Hammer', null, 'San Jose'],
   '2:30 PM':  ['Longos', 'OM BJJ', 'Orlando 10P', 'Inverted Gear', 'Miguel'],
-  '3:00 PM':  [null, 'Sugoi', 'Universal', 'Artistry', 'Champion Chiro'],
-  '3:30 PM':  ['Range', 'WNK', 'Grit', 'Mythuc', null],
+  '3:00 PM':  ['Mythic', 'Sugoi', 'Universal', 'Artistry', 'Champion Chiro'],
+  '3:30 PM':  ['Range', 'WNK', 'Grit', null, null],
   '4:00 PM':  ['Academy Eden Prarier', 'Granite Bay', 'Verde Valley', 'Centerline', 'Robby'],
 };
 
@@ -82,7 +82,7 @@ const CALLS_CLIENT_MATCH = {
   'Champion Chiro':      'chiropractic',
   'Range':               'range bjj',
   'Grit':                'grit bjj',
-  'Mythuc':              'mythic',
+  'Mythic':              'mythic',
   'Academy Eden Prarier':'eden prairie',
   'Granite Bay':         'granite bay',
   'Verde Valley':        'verde valley',
