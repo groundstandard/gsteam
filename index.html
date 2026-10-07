@@ -4,6 +4,18 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
 <title>gsTeam Scoreboard</title>
+<script>
+  /* /grand-cast/ is a page of its own (2026-10-08). A service worker from before then hands it this shell
+     instead, whose scripts 404 there: a blank screen. Fetch the current worker, which lets /grand-cast
+     through, and load the page again once it takes over. */
+  (function () {
+    if (location.pathname.indexOf('/grand-cast') !== 0 || !('serviceWorker' in navigator)) return;
+    var sw = navigator.serviceWorker, was = sw.controller, done = false;
+    function again() { if (!done && sw.controller !== was) { done = true; location.reload(); } }
+    sw.addEventListener('controllerchange', again);
+    sw.getRegistration().then(function (reg) { return reg && reg.update(); }).then(again, again);
+  })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Instrument+Serif&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
@@ -17,7 +29,7 @@
      tab bar, etc.) so the layout knows where the iPhone notch + home indicator
      are without inflating the document beyond the viewport. */
 </style>
-  <!-- PWA · injected by scripts/build-pwa.sh · build 1777995866 -->
+  <!-- PWA · injected by scripts/build-pwa.sh · build 1791396654 -->
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0B0E14">
   <meta name="mobile-web-app-capable" content="yes">
@@ -96,7 +108,7 @@
           .catch(function (e) { console.warn('[CABT] SW registration failed', e); });
       });
     }
-    window.CABT_BUILD = '1777995866';
+    window.CABT_BUILD = '1791396654';
     window.CABT_API_MODE = window.CABT_API_MODE || 'supabase';
   </script>
 </head>

@@ -798,6 +798,8 @@ function App() {
         { name: 'book',       icon: 'nav-accounts', label: 'Accounts' },
         { name: 'scorecard',  icon: 'nav-score',    label: 'Score' },
         { name: 'profile',    icon: 'nav-me',       label: 'Me' },
+        // Kurt's client map, its own page at /grand-cast/ (2026-10-08). Desktop sidebar only.
+        { name: 'grand-cast', icon: 'nav-accounts', label: 'Grand Cast', href: '/grand-cast/', sidebarOnly: true },
       ]
     : role === 'Sales'
     ? [
@@ -809,6 +811,7 @@ function App() {
     : [
         { name: 'home',      icon: 'chart',        label: 'Dashboard' },
         { name: 'clients',   icon: 'nav-accounts', label: 'Clients' },
+        { name: 'grand-cast', icon: 'nav-accounts', label: 'Grand Cast', href: '/grand-cast/', sidebarOnly: true },
         { name: 'revenue',   icon: 'nav-score',    label: 'Revenue' },
         { name: 'bonus',     icon: 'cash',         label: 'Bonuses' },
         { name: 'approvals', icon: 'shield',       label: 'Approvals' },
@@ -983,6 +986,7 @@ function App() {
                 <button
                   key={tb.name}
                   onClick={() => {
+                    if (tb.href) { window.location.href = tb.href; return; }
                     if (tb.name === 'log-picker') {
                       setLogSheet(true);
                       return;
@@ -1078,7 +1082,7 @@ function App() {
         WebkitBackdropFilter: 'saturate(180%) blur(20px)',
         zIndex: 100,
       }}>
-        {tabs.map(tb => {
+        {tabs.filter(tb => !tb.sidebarOnly).map(tb => {
           const active = route.name === tb.name
             || (tb.name === 'log-picker' && (route.name === 'log-metrics' || route.name === 'log-event' || route.name === 'log-survey' || route.name === 'log-checkin'));
           return (
