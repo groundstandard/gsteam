@@ -699,6 +699,10 @@ function App() {
     return ({
       'home': 'Dashboard',
       'dashboard': 'Dashboard',
+      'leads': 'Leads',
+      'ads': 'Ad Management',
+      'web': 'Website',
+      'social': 'Social',
       'approvals': 'Approvals',
       'edits': 'Edit Requests',
       'reviews': 'Reviews Inbox',
@@ -750,6 +754,12 @@ function App() {
       // dashboard page"). Approvals moved to its own route + tab.
       case 'home':        return <AdminDashboard state={state} theme={theme} navigate={navigate}/>;
       case 'dashboard':   return <AdminDashboard state={state} theme={theme} navigate={navigate}/>;
+      // Bobby's reporting sections, built on v2 and brought into the live app on 2026-10-10. Separate screens:
+      // the dashboard is left exactly as it was.
+      case 'leads':       return <LeadsSection state={state} theme={theme} navigate={navigate}/>;
+      case 'ads':         return <AdsSection state={state} theme={theme} navigate={navigate}/>;
+      case 'web':         return <WebSection state={state} theme={theme} navigate={navigate}/>;
+      case 'social':      return <SocialSection state={state} theme={theme} navigate={navigate}/>;
       case 'approvals':   return <AdminApprovals state={state} theme={theme} navigate={navigate} onApprove={approveAdj} onReject={rejectAdj} onAssignCA={assignCA} onEditDecided={applyEditDecision}/>;
       case 'edits':       return <AdminEditApprovals state={state} theme={theme} onEditDecided={applyEditDecision}/>;
       case 'reviews':     return <AdminReviewsInbox state={state} theme={theme}/>;
@@ -810,6 +820,12 @@ function App() {
       ]
     : [
         { name: 'home',      icon: 'chart',        label: 'Dashboard' },
+        // Reporting (2026-10-10): desktop sidebar only, so the phone tab bar keeps the tabs everyone knows.
+        // On a phone they are in More.
+        { name: 'leads',     icon: 'nav-today',    label: 'Leads',   sidebarOnly: true },
+        { name: 'ads',       icon: 'nav-score',    label: 'Ads',     sidebarOnly: true },
+        { name: 'web',       icon: 'nav-today',    label: 'Website', sidebarOnly: true },
+        { name: 'social',    icon: 'nav-score',    label: 'Social',  sidebarOnly: true },
         { name: 'clients',   icon: 'nav-accounts', label: 'Clients' },
         { name: 'grand-cast', icon: 'nav-accounts', label: 'Grand Cast', href: '/grand-cast/', sidebarOnly: true },
         { name: 'revenue',   icon: 'nav-score',    label: 'Revenue' },

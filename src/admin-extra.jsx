@@ -1776,6 +1776,11 @@ function AdminMore({ theme, navigate, profile, onSignOut }) {
   const items = [
     { name: 'calls-board', icon: 'nav-accounts', label: 'Weekly Client Calls', desc: 'Live per-account call-status board — click to cycle colors' },
     { name: 'dashboard', icon: 'chart', label: 'All-accounts dashboard', desc: 'Compare every client’s metrics in one sortable table' },
+    // Reporting (2026-10-10). On a phone this is the way in; the desktop sidebar has them too.
+    { name: 'leads',     icon: 'nav-today', label: 'Leads',           desc: 'Every lead, by source: Facebook, Google, website, phone' },
+    { name: 'ads',       icon: 'nav-score', label: 'Ad Management',   desc: 'Facebook and Google ads, by campaign and ad set' },
+    { name: 'web',       icon: 'nav-today', label: 'Website',         desc: 'Google Analytics, Search Console, Business Profile' },
+    { name: 'social',    icon: 'nav-score', label: 'Social',          desc: 'Facebook page and Instagram' },
     { name: 'edits',     icon: 'edit',  label: 'Edit Requests',   desc: 'Approve protected-field edits past grace' },
     { name: 'reviews',   icon: 'star',  label: 'Reviews Inbox',   desc: 'Match incoming reviews to clients' },
     { name: 'pending-clients', icon: 'cash', label: 'Pending Clients', desc: 'Approve new Stripe customers' },

@@ -461,6 +461,138 @@ const CABT_api = {
     rows.sort((a, b) => (b.sortDate || '').localeCompare(a.sortDate || ''));
     return { rows };
   },
+  // ── Reporting (v2) ───────────────────────────────────────────────────────
+  // Bobby, 2026-09-14 [3:51:14]: "did the lead come in from Facebook? Did the
+  // lead come in from Google? Did the lead come in from the website? Did the
+  // lead come in from the phone?" These read the tables the GoHighLevel and
+  // Facebook syncs write into. Until a sync runs they return nothing, and the
+  // screens say so rather than drawing zeros as if they were measured.
+  async fetchLeads({ from, to, clientId, source, limit = 1000 } = {}) {
+    if (CABT_getApiMode() !== 'supabase') return localLeads({ from, to, clientId, source, limit });
+    const sb = await CABT_sb();
+    let q = sb.from('leads')
+      .select('*, client:clients(id, name)')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (from)     q = q.gte('created_at', from);
+    if (to)       q = q.lte('created_at', to + 'T23:59:59.999Z');
+    if (clientId) q = q.eq('client_id', clientId);
+    if (source)   q = q.eq('source', source);
+    const { data, error } = await q;
+    if (error) throw error;
+    return toUI(data || []);
+  },
+
+  // Ad numbers arrive as one row per day per level, so any window Mike asks for
+  // is a sum rather than a stored total. ref_id points at an account, a campaign
+  // or an ad set depending on the level, which no single foreign key can express
+  // — the names are fetched alongside and matched here.
+  // The website's day: Analytics, Search Console and the Google listing in one
+  // row per client, because Bobby asked not to see the same visit counted twice.
+  // Paged for the same reason the ad metrics are — a month of daily rows across
+  // fifty clients passes Supabase's silent 1000-row ceiling.
+  async fetchWebMetrics({ from, to, clientId } = {}) {
+    if (CABT_getApiMode() !== 'supabase') return { rows: [], sources: [] };
+    const sb = await CABT_sb();
+    const PAGE = 1000;
+
+    const pageOf = (table, offset) => {
+      let q = sb.from(table).select('*').order('day', { ascending: true })
+        .range(offset, offset + PAGE - 1);
+      if (from)     q = q.gte('day', from);
+      if (to)       q = q.lte('day', to);
+      if (clientId) q = q.eq('client_id', clientId);
+      return q;
+    };
+
+    const all = async (table) => {
+      const out = [];
+      for (let offset = 0; ; offset += PAGE) {
+        const r = await pageOf(table, offset);
+        if (r.error) throw r.error;
+        out.push(...(r.data || []));
+        if ((r.data || []).length < PAGE) break;
+      }
+      return out;
+    };
+
+    const [rows, sources] = await Promise.all([
+      all('web_performance_v'),
+      all('web_sources_daily'),
+    ]);
+    return { rows: toUI(rows), sources: toUI(sources) };
+  },
+
+  // Social stays per platform: a follower on Instagram and a follower on
+  // Facebook are different things and adding them would say nothing.
+  async fetchSocialMetrics({ from, to, clientId } = {}) {
+    if (CABT_getApiMode() !== 'supabase') return { rows: [] };
+    const sb = await CABT_sb();
+    const PAGE = 1000;
+    const out = [];
+    for (let offset = 0; ; offset += PAGE) {
+      let q = sb.from('social_metrics_daily').select('*')
+        .order('day', { ascending: true }).range(offset, offset + PAGE - 1);
+      if (from)     q = q.gte('day', from);
+      if (to)       q = q.lte('day', to);
+      if (clientId) q = q.eq('client_id', clientId);
+      const r = await q;
+      if (r.error) throw r.error;
+      out.push(...(r.data || []));
+      if ((r.data || []).length < PAGE) break;
+    }
+    return { rows: toUI(out) };
+  },
+
+  async fetchAdMetrics({ from, to, clientId, level = 'campaign' } = {}) {
+    if (CABT_getApiMode() !== 'supabase') return localAdMetrics({ from, to, clientId, level });
+    const sb = await CABT_sb();
+    // Supabase stops at 1000 rows and says nothing about it. One day per campaign
+    // passes that inside a month — 1,445 rows for the last 30 days as it stands —
+    // so a single request would quietly drop a third of the spend and the section
+    // would under-report with no sign that anything was missing. Page instead.
+    const PAGE = 1000;
+    const page = async (offset) => {
+      let q = sb.from('ad_metrics_daily_v').select('*').eq('level', level)
+        .order('day', { ascending: true }).range(offset, offset + PAGE - 1);
+      if (from)     q = q.gte('day', from);
+      if (to)       q = q.lte('day', to);
+      if (clientId) q = q.eq('client_id', clientId);
+      return q;
+    };
+
+    const metricRows = [];
+    for (let offset = 0; ; offset += PAGE) {
+      const r = await page(offset);
+      if (r.error) throw r.error;
+      metricRows.push(...(r.data || []));
+      if ((r.data || []).length < PAGE) break;
+    }
+
+    const [acc, camp, sets] = await Promise.all([
+      sb.from('ad_accounts').select('*'),
+      sb.from('ad_campaigns').select('*'),
+      sb.from('ad_sets').select('*'),
+    ]);
+    return {
+      rows:      toUI(metricRows),
+      accounts:  toUI(acc.data || []),
+      campaigns: toUI(camp.data || []),
+      adSets:    toUI(sets.data || []),
+    };
+  },
+
+  // "Kurt and Mike, they'll confirm the data" [3:48:40] — which means they have
+  // to be able to tell a real zero from a sync that died at 3am.
+  async fetchSyncRuns({ limit = 25 } = {}) {
+    if (CABT_getApiMode() !== 'supabase') return (window.CABT_loadState().syncRuns || []).slice(0, limit);
+    const sb = await CABT_sb();
+    const { data, error } = await sb.from('sync_runs')
+      .select('*').order('started_at', { ascending: false }).limit(limit);
+    if (error) throw error;
+    return toUI(data || []);
+  },
+
   // F1.1.3 — paginated audit_log fetch with optional filters.
   async fetchAuditLog({ actorId, tableName, action, fromDate, toDate, limit = 50, offset = 0 } = {}) {
     if (CABT_getApiMode() !== 'supabase') return { rows: [], hasMore: false };
@@ -489,6 +621,39 @@ const CABT_api = {
     return { unsubscribe: () => chan && chan.unsubscribe() };
   },
 };
+
+// ── Demo-mode reporting ─────────────────────────────────────────────────────
+// Same filters as the Supabase queries, run over the fixtures in data.jsx, so
+// the Leads and Ads screens can be shown before either sync exists. Nothing
+// here ever touches the live database.
+function localLeads({ from, to, clientId, source, limit = 1000 } = {}) {
+  const all = window.CABT_loadState().leads || [];
+  return all.filter(l => {
+    const day = (l.createdAt || '').slice(0, 10);
+    if (from && day < from) return false;
+    if (to && day > to) return false;
+    if (clientId && l.clientId !== clientId) return false;
+    if (source && l.source !== source) return false;
+    return true;
+  }).slice(0, limit);
+}
+
+function localAdMetrics({ from, to, clientId, level = 'campaign' } = {}) {
+  const st = window.CABT_loadState();
+  const rows = (st.adMetricsDaily || []).filter(r => {
+    if (r.level !== level) return false;
+    if (from && r.day < from) return false;
+    if (to && r.day > to) return false;
+    if (clientId && r.clientId !== clientId) return false;
+    return true;
+  });
+  return {
+    rows,
+    accounts:  st.adAccounts || [],
+    campaigns: st.adCampaigns || [],
+    adSets:    st.adSets || [],
+  };
+}
 
 async function route(sheetAction, row, supabaseTable) {
   const mode = CABT_getApiMode();
